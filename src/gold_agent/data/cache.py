@@ -1,9 +1,6 @@
 """数据缓存层 — 本地 Parquet + 可选 Redis"""
 
-import hashlib
-import time
 from pathlib import Path
-from typing import Optional
 
 import pandas as pd
 import logging
@@ -43,7 +40,7 @@ class DataCache:
 
     # ---- Parquet 持久化 ----
 
-    def _parquet_path(self, key: str, dt: Optional[pd.Timestamp] = None) -> Path:
+    def _parquet_path(self, key: str, dt: pd.Timestamp | None = None) -> Path:
         """生成 Parquet 文件路径: data/cache/{key}/{YYYY-MM}.parquet"""
         if dt is None:
             dt = pd.Timestamp.now()
@@ -101,7 +98,7 @@ class DataCache:
     def _redis_key(self, key: str) -> str:
         return f"gold_agent:{key}"
 
-    def get_redis(self, key: str) -> Optional[pd.DataFrame]:
+    def get_redis(self, key: str) -> pd.DataFrame | None:
         """从 Redis 读取缓存"""
         if not self.redis:
             return None

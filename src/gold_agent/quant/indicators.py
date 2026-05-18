@@ -1,7 +1,6 @@
 """技术指标计算 — 优先使用 pandas-ta，回退到纯 pandas 实现"""
 
 from dataclasses import dataclass
-from typing import Optional
 
 import numpy as np
 import pandas as pd
@@ -22,36 +21,36 @@ class IndicatorResult:
     """技术指标计算结果"""
 
     # 趋势指标
-    ma5: Optional[pd.Series] = None
-    ma10: Optional[pd.Series] = None
-    ma20: Optional[pd.Series] = None
-    ma60: Optional[pd.Series] = None
-    ema12: Optional[pd.Series] = None
-    ema26: Optional[pd.Series] = None
+    ma5: pd.Series | None = None
+    ma10: pd.Series | None = None
+    ma20: pd.Series | None = None
+    ma60: pd.Series | None = None
+    ema12: pd.Series | None = None
+    ema26: pd.Series | None = None
 
     # MACD
-    macd_line: Optional[pd.Series] = None
-    macd_signal: Optional[pd.Series] = None
-    macd_hist: Optional[pd.Series] = None
+    macd_line: pd.Series | None = None
+    macd_signal: pd.Series | None = None
+    macd_hist: pd.Series | None = None
 
     # 振荡器
-    rsi14: Optional[pd.Series] = None
-    stoch_k: Optional[pd.Series] = None
-    stoch_d: Optional[pd.Series] = None
+    rsi14: pd.Series | None = None
+    stoch_k: pd.Series | None = None
+    stoch_d: pd.Series | None = None
 
     # 波动率
-    bb_upper: Optional[pd.Series] = None
-    bb_mid: Optional[pd.Series] = None
-    bb_lower: Optional[pd.Series] = None
-    atr14: Optional[pd.Series] = None
+    bb_upper: pd.Series | None = None
+    bb_mid: pd.Series | None = None
+    bb_lower: pd.Series | None = None
+    atr14: pd.Series | None = None
 
     # 趋势强度
-    adx: Optional[pd.Series] = None
-    supertrend: Optional[pd.Series] = None
-    supertrend_dir: Optional[pd.Series] = None  # 1=看多, -1=看空
+    adx: pd.Series | None = None
+    supertrend: pd.Series | None = None
+    supertrend_dir: pd.Series | None = None  # 1=看多, -1=看空
 
     # 成交量
-    obv: Optional[pd.Series] = None
+    obv: pd.Series | None = None
 
     def to_dict(self) -> dict:
         """转为字典，用于 LLM 上下文注入"""
@@ -113,7 +112,7 @@ def _bollinger_bands(series: pd.Series, length: int = 20, std_dev: float = 2.0) 
 
 def _atr(high: pd.Series, low: pd.Series, close: pd.Series, length: int = 14) -> pd.Series:
     prev_close = close.shift(1)
-    tr = pd.concat([high - low, (high - prev_close).abs(), (low - prev_close).abs()], axis=1).max(axis=1)
+    tr = pd.concat([high - low, (high - prev_close).abs(), (low - prev_close).abs()], axis=1).max(axis=1)  # noqa: E501
     return tr.ewm(alpha=1 / length, min_periods=length).mean()
 
 def _adx(high: pd.Series, low: pd.Series, close: pd.Series, length: int = 14) -> pd.Series:
@@ -212,7 +211,7 @@ def compute_indicators(df: pd.DataFrame) -> IndicatorResult:
         result.adx = _adx(high, low, close, 14)
 
     indicator_count = len([v for v in result.__dict__.values() if v is not None])
-    logger.info(f"技术指标计算完成: {indicator_count} 个指标 (pandas-ta={'是' if HAS_PANDAS_TA else '否'})")
+    logger.info(f"技术指标计算完成: {indicator_count} 个指标 (pandas-ta={'是' if HAS_PANDAS_TA else '否'})")  # noqa: E501
     return result
 
 

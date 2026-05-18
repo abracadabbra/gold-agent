@@ -1,10 +1,8 @@
 """FastAPI 主入口"""
 
-import os
 import time
 from contextlib import asynccontextmanager
 from datetime import datetime
-from pathlib import Path
 
 from fastapi import FastAPI, WebSocket
 from fastapi.middleware.cors import CORSMiddleware

@@ -1,8 +1,6 @@
 """新闻情绪数据采集 — RSS + 关键词提取"""
 
 import re
-from datetime import datetime
-from typing import Optional
 
 import httpx
 import pandas as pd
@@ -120,7 +118,7 @@ def fetch_news_with_sentiment(max_items: int = 30) -> pd.DataFrame:
 
     if not all_news:
         logger.warning("未获取到任何新闻")
-        return pd.DataFrame(columns=["title", "link", "published", "source", "sentiment_score", "sentiment_label"])
+        return pd.DataFrame(columns=["title", "link", "published", "source", "sentiment_score", "sentiment_label"])  # noqa: E501
 
     df = pd.DataFrame(all_news)
 

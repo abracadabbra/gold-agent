@@ -1,6 +1,5 @@
 """时序预测 — Prophet + 外部回归因子"""
 
-from typing import Optional
 
 import pandas as pd
 import logging
@@ -10,7 +9,7 @@ logger = logging.getLogger(__name__)
 def predict_gold_price(
     df: pd.DataFrame,
     days: int = 7,
-    regressors: Optional[dict[str, pd.Series]] = None,
+    regressors: dict[str, pd.Series] | None = None,
 ) -> dict:
     """
     使用 Prophet 预测金价走势
@@ -126,10 +125,10 @@ def get_prediction_summary(pred_result: dict) -> str:
     ]
 
     for _, row in df.iterrows():
-        date_str = row["date"].strftime("%m-%d") if hasattr(row["date"], "strftime") else str(row["date"])[:10]
-        lines.append(f"  {date_str}: ${row['predicted']:.2f} [{row['lower_bound']:.2f} ~ {row['upper_bound']:.2f}]")
+        date_str = row["date"].strftime("%m-%d") if hasattr(row["date"], "strftime") else str(row["date"])[:10]  # noqa: E501
+        lines.append(f"  {date_str}: ${row['predicted']:.2f} [{row['lower_bound']:.2f} ~ {row['upper_bound']:.2f}]")  # noqa: E501
 
     if pred_result["changepoints"]:
-        lines.extend(["", "### 近期趋势变化点:"] + [f"  - {cp}" for cp in pred_result["changepoints"]])
+        lines.extend(["", "### 近期趋势变化点:"] + [f"  - {cp}" for cp in pred_result["changepoints"]])  # noqa: E501
 
     return "\n".join(lines)

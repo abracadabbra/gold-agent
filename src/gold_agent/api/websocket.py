@@ -2,7 +2,6 @@
 
 import asyncio
 import json
-from typing import Dict, Set, Optional
 from datetime import datetime
 
 from fastapi import WebSocket, WebSocketDisconnect
@@ -13,12 +12,12 @@ logger = logging.getLogger(__name__)
 
 class ConnectionManager:
     """WebSocket 连接管理器"""
-    
+
     def __init__(self):
         # 活跃连接: {client_id: WebSocket}
-        self.active_connections: Dict[str, WebSocket] = {}
+        self.active_connections: dict[str, WebSocket] = {}
         # 订阅频道: {channel: set(client_id)}
-        self.subscriptions: Dict[str, Set[str]] = {
+        self.subscriptions: dict[str, set[str]] = {
             "price": set(),      # 金价更新
             "signal": set(),     # 信号更新
             "news": set(),       # 新闻更新
@@ -26,15 +25,15 @@ class ConnectionManager:
             "system": set(),     # 系统状态
         }
         # 客户端订阅: {client_id: set(channel)}
-        self.client_subscriptions: Dict[str, Set[str]] = {}
-    
+        self.client_subscriptions: dict[str, set[str]] = {}
+
     async def connect(self, websocket: WebSocket, client_id: str):
         """接受新的 WebSocket 连接"""
         await websocket.accept()
         self.active_connections[client_id] = websocket
         self.client_subscriptions[client_id] = set()
         logger.info(f"WebSocket 连接: {client_id}, 当前连接数: {len(self.active_connections)}")
-        
+
         # 发送欢迎消息
         await self.send_personal_message(client_id, {
             "type": "connection",
@@ -43,21 +42,21 @@ class ConnectionManager:
             "available_channels": list(self.subscriptions.keys()),
             "timestamp": datetime.utcnow().isoformat()
         })
-    
+
     def disconnect(self, client_id: str):
         """断开连接"""
         if client_id in self.active_connections:
             del self.active_connections[client_id]
-        
+
         # 清理订阅
         if client_id in self.client_subscriptions:
             for channel in self.client_subscriptions[client_id]:
                 if channel in self.subscriptions:
                     self.subscriptions[channel].discard(client_id)
             del self.client_subscriptions[client_id]
-        
+
         logger.info(f"WebSocket 断开: {client_id}, 当前连接数: {len(self.active_connections)}")
-    
+
     async def send_personal_message(self, client_id: str, message: dict):
         """发送个人消息"""
         if client_id in self.active_connections:
@@ -68,20 +67,20 @@ class ConnectionManager:
             except Exception as e:
                 logger.error(f"发送消息失败 {client_id}: {e}")
                 self.disconnect(client_id)
-    
+
     async def broadcast(self, channel: str, message: dict):
         """广播消息到频道的所有订阅者"""
         if channel not in self.subscriptions:
             logger.warning(f"未知频道: {channel}")
             return
-        
+
         subscribers = self.subscriptions[channel]
         if not subscribers:
             return
-        
+
         message["channel"] = channel
         message["timestamp"] = datetime.utcnow().isoformat()
-        
+
         disconnected = []
         for client_id in subscribers:
             if client_id in self.active_connections:
@@ -94,42 +93,42 @@ class ConnectionManager:
                 except Exception as e:
                     logger.error(f"广播失败 {client_id}: {e}")
                     disconnected.append(client_id)
-        
+
         # 清理断开的连接
         for client_id in disconnected:
             self.disconnect(client_id)
-    
+
     def subscribe(self, client_id: str, channel: str) -> bool:
         """订阅频道"""
         if channel not in self.subscriptions:
             return False
-        
+
         self.subscriptions[channel].add(client_id)
         if client_id not in self.client_subscriptions:
             self.client_subscriptions[client_id] = set()
         self.client_subscriptions[client_id].add(channel)
-        
+
         logger.info(f"订阅: {client_id} -> {channel}")
         return True
-    
+
     def unsubscribe(self, client_id: str, channel: str) -> bool:
         """取消订阅"""
         if channel not in self.subscriptions:
             return False
-        
+
         self.subscriptions[channel].discard(client_id)
         if client_id in self.client_subscriptions:
             self.client_subscriptions[client_id].discard(channel)
-        
+
         logger.info(f"取消订阅: {client_id} -> {channel}")
         return True
-    
+
     def get_stats(self) -> dict:
         """获取连接统计"""
         return {
             "total_connections": len(self.active_connections),
             "subscriptions": {
-                channel: len(subscribers) 
+                channel: len(subscribers)
                 for channel, subscribers in self.subscriptions.items()
             },
             "clients": list(self.active_connections.keys())
@@ -143,12 +142,12 @@ manager = ConnectionManager()
 async def websocket_endpoint(websocket: WebSocket, client_id: str):
     """WebSocket 端点处理函数"""
     await manager.connect(websocket, client_id)
-    
+
     try:
         while True:
             # 接收客户端消息
             data = await websocket.receive_text()
-            
+
             try:
                 message = json.loads(data)
                 await handle_client_message(client_id, message)
@@ -163,7 +162,7 @@ async def websocket_endpoint(websocket: WebSocket, client_id: str):
                     "type": "error",
                     "message": f"处理消息失败: {str(e)}"
                 })
-    
+
     except WebSocketDisconnect:
         manager.disconnect(client_id)
     except Exception as e:
@@ -174,7 +173,7 @@ async def websocket_endpoint(websocket: WebSocket, client_id: str):
 async def handle_client_message(client_id: str, message: dict):
     """处理客户端消息"""
     msg_type = message.get("type")
-    
+
     if msg_type == "subscribe":
         channel = message.get("channel")
         if channel:
@@ -185,7 +184,7 @@ async def handle_client_message(client_id: str, message: dict):
                 "success": success,
                 "message": f"已订阅 {channel}" if success else f"订阅失败: {channel}"
             })
-    
+
     elif msg_type == "unsubscribe":
         channel = message.get("channel")
         if channel:
@@ -196,20 +195,20 @@ async def handle_client_message(client_id: str, message: dict):
                 "success": success,
                 "message": f"已取消订阅 {channel}" if success else f"取消订阅失败: {channel}"
             })
-    
+
     elif msg_type == "ping":
         await manager.send_personal_message(client_id, {
             "type": "pong",
             "timestamp": datetime.utcnow().isoformat()
         })
-    
+
     elif msg_type == "stats":
         stats = manager.get_stats()
         await manager.send_personal_message(client_id, {
             "type": "stats",
             "data": stats
         })
-    
+
     else:
         await manager.send_personal_message(client_id, {
             "type": "error",
@@ -269,5 +268,5 @@ async def periodic_price_push(interval_seconds: int = 60):
             pass
         except Exception as e:
             logger.error(f"定时推送失败: {e}")
-        
+
         await asyncio.sleep(interval_seconds)

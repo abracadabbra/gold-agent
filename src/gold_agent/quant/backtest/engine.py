@@ -1,13 +1,11 @@
 """回测引擎封装 — 基于 backtrader (可选依赖)"""
 
 from dataclasses import dataclass
-from typing import Optional
 
 import pandas as pd
 import logging
 logger = logging.getLogger(__name__)
 
-from gold_agent.config import settings
 
 
 # ============================================================
@@ -109,8 +107,8 @@ class GoldBacktester:
 
         # 添加策略
         if self.strategy_name == "golden_cross":
-            StrategyClass = _create_golden_cross_strategy()
-            cerebro.addstrategy(StrategyClass)
+            strategy_class = _create_golden_cross_strategy()
+            cerebro.addstrategy(strategy_class)
         else:
             raise ValueError(f"未知策略: {self.strategy_name}")
 

@@ -1,14 +1,13 @@
 """辩论流程编排 — 多 Agent 协作的核心引擎"""
 
 import json
-from dataclasses import dataclass, field
-from typing import Optional
+from dataclasses import dataclass
 
 import logging
 logger = logging.getLogger(__name__)
 
 from gold_agent.debate.agents import get_agents, AgentConfig
-from gold_agent.debate.llm import chat_completion, chat_completion_json
+from gold_agent.debate.llm import chat_completion
 
 
 @dataclass
@@ -26,10 +25,10 @@ class DebateRound:
 class DebateResult:
     """完整辩论结果"""
     rounds: list[DebateRound]
-    bull_argument: Optional[dict] = None
-    bear_argument: Optional[dict] = None
-    audit_result: Optional[dict] = None
-    final_verdict: Optional[dict] = None
+    bull_argument: dict | None = None
+    bear_argument: dict | None = None
+    audit_result: dict | None = None
+    final_verdict: dict | None = None
 
     def to_dict(self) -> dict:
         return {

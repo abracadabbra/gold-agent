@@ -7,7 +7,7 @@ import pandas as pd
 import logging
 logger = logging.getLogger(__name__)
 
-from gold_agent.quant.indicators import compute_indicators, IndicatorResult
+from gold_agent.quant.indicators import compute_indicators
 
 
 class Signal(Enum):
@@ -119,7 +119,7 @@ def generate_signal(df: pd.DataFrame) -> TradeSignal:
 
     # ---- 布林带 (±10) ----
     if "bb_upper" in latest and "bb_lower" in latest:
-        bb_upper, bb_lower, bb_mid = latest["bb_upper"], latest["bb_lower"], latest["bb_mid"]
+        bb_upper, bb_lower, _ = latest["bb_upper"], latest["bb_lower"], latest["bb_mid"]
         if price < bb_lower:
             score += 10
             reasons.append(f"价格(${price:.2f}) < 布林下轨(${bb_lower:.2f})，可能超卖反弹")

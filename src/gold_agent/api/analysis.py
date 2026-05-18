@@ -10,7 +10,7 @@ logger = logging.getLogger(__name__)
 
 def _json_safe(df: pd.DataFrame) -> list[dict[str, Any]]:
     """将 DataFrame 转为 JSON-safe 字典列表"""
-    return df.where(df.notna(), None).astype(object).where(df.notna(), None).to_dict(orient="records")
+    return df.where(df.notna(), None).astype(object).where(df.notna(), None).to_dict(orient="records")  # noqa: E501
 
 from gold_agent.data.gold_price import fetch_gold_price
 from gold_agent.data.macro import fetch_macro_yfinance, fetch_all_macro

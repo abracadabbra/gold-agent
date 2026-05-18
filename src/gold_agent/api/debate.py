@@ -1,6 +1,5 @@
 """辩论接口"""
 
-import json
 from fastapi import APIRouter, HTTPException
 import logging
 logger = logging.getLogger(__name__)

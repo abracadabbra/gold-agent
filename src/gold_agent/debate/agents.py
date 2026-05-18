@@ -1,7 +1,6 @@
 """Agent 定义 — 4 个角色的数据结构"""
 
-from dataclasses import dataclass, field
-from typing import Optional
+from dataclasses import dataclass
 
 from gold_agent.config import settings
 from gold_agent.debate.prompts import (

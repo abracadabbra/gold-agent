@@ -1,7 +1,6 @@
 """LLM 调用封装 — OpenAI 兼容端点"""
 
 import json
-from typing import Optional
 
 from openai import AsyncOpenAI
 import logging
@@ -23,7 +22,7 @@ async def chat_completion(
     model: str = "gpt-4.1",
     temperature: float = 0.7,
     max_tokens: int = 2000,
-    response_format: Optional[dict] = None,
+    response_format: dict | None = None,
 ) -> str:
     """
     调用 LLM 聊天补全
