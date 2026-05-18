@@ -219,6 +219,16 @@ system_config        — 系统配置键值对
 | **lightweight-charts** | — | K 线图 | TradingView 开源图表库, 轻量高性能 |
 | **Tailwind CSS** | — | 样式 | 原子化 CSS, 开发效率高 |
 
+### 界面预览
+
+**首页 — AI 分析概览**
+
+![首页](frontend/public/index.png)
+
+**数据面板 — 实时行情与技术指标**
+
+![数据面板](frontend/public/dashboard.png)
+
 ### 部署
 
 | 技术 | 用途 | 说明 |
