@@ -56,7 +56,7 @@ def predict_gold_price(
                 # 对齐日期
                 reg_df = pd.DataFrame({"ds": series.index, name: series.values})
                 prophet_df = prophet_df.merge(reg_df, on="ds", how="left")
-                prophet_df[name] = prophet_df[name].fillna(method="ffill").fillna(method="bfill")
+                prophet_df[name] = prophet_df[name].ffill().bfill()
                 model.add_regressor(name)
                 logger.info(f"  添加回归因子: {name}")
 
@@ -83,7 +83,8 @@ def predict_gold_price(
     trend_direction = "up" if forecast["trend"].diff().iloc[-1] > 0 else "down"
 
     # 变化点
-    changepoints = model.changepoints.tolist() if hasattr(model, "changepoints") else []
+    cp = model.changepoints if hasattr(model, "changepoints") else []
+    changepoints = cp.tolist() if hasattr(cp, "tolist") else list(cp)
 
     # 组件
     components = {}

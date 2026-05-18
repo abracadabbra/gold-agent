@@ -173,16 +173,19 @@ class TestAnalysisPredict:
 class TestAnalysisMacro:
     """宏观数据端点"""
 
-    @patch("gold_agent.api.analysis.cache.get")
-    def test_get_macro_success(self, mock_cache_get):
-        mock_cache_get.return_value = _fake_macro()
+    @patch("gold_agent.api.analysis.fetch_all_macro")
+    def test_get_macro_success(self, mock_fetch):
+        mock_fetch.return_value = {
+            "realtime": _fake_macro(),
+            "official": _fake_macro(),
+        }
 
         resp = client.get("/api/analysis/macro?period=1y")
         assert resp.status_code == 200
         data = resp.json()
-        assert data["records"] == 5
-        assert "usd_index" in data["columns"]
-        assert len(data["data"]) == 5
+        assert data["realtime"]["records"] == 5
+        assert "usd_index" in data["realtime"]["columns"]
+        assert len(data["realtime"]["data"]) == 5
 
 
 # ============================================================

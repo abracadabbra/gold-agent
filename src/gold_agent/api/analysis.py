@@ -1,11 +1,19 @@
 """分析接口 — 金价数据 + 技术指标 + 信号"""
 
+from typing import Any
+
+import pandas as pd
 from fastapi import APIRouter, HTTPException, Query
 import logging
 logger = logging.getLogger(__name__)
 
+
+def _json_safe(df: pd.DataFrame) -> list[dict[str, Any]]:
+    """将 DataFrame 转为 JSON-safe 字典列表"""
+    return df.where(df.notna(), None).astype(object).where(df.notna(), None).to_dict(orient="records")
+
 from gold_agent.data.gold_price import fetch_gold_price
-from gold_agent.data.macro import fetch_macro_yfinance
+from gold_agent.data.macro import fetch_macro_yfinance, fetch_all_macro
 from gold_agent.data.news import fetch_news_with_sentiment
 from gold_agent.data.cache import cache
 from gold_agent.quant.indicators import compute_indicators, get_indicator_summary
@@ -100,10 +108,10 @@ async def get_prediction(
     """时序预测"""
     try:
         df = cache.get(
-            key=f"gold_{source}",
+            key=f"gold_{source}_2y",
             fetch_fn=fetch_gold_price,
             source=source,
-            period="2y",  # 预测需要更多历史数据
+            period="2y",
         )
 
         # 获取宏观数据作为回归因子
@@ -119,8 +127,12 @@ async def get_prediction(
         prediction = predict_gold_price(df, days=days, regressors=regressors)
         summary = get_prediction_summary(prediction)
 
+        forecast = prediction["forecast"]
+        if "ds" in forecast.columns:
+            forecast["ds"] = forecast["ds"].astype(str)
+
         return {
-            "prediction": prediction["forecast"].to_dict(orient="records"),
+            "prediction": _json_safe(forecast),
             "trend": prediction["trend_direction"],
             "summary": summary,
         }
@@ -131,17 +143,22 @@ async def get_prediction(
 
 @router.get("/macro")
 async def get_macro_data(period: str = Query("1y")):
-    """获取宏观数据"""
+    """获取宏观数据 (yfinance 实时 + FRED 官方)"""
     try:
-        df = cache.get(
-            key="macro_yfinance",
-            fetch_fn=fetch_macro_yfinance,
-            period=period,
-        )
+        data = fetch_all_macro(period=period)
+        realtime = data["realtime"]
+        official = data["official"]
         return {
-            "records": len(df),
-            "columns": list(df.columns) if not df.empty else [],
-            "data": df.tail(100).to_dict(orient="records"),
+            "realtime": {
+                "records": len(realtime),
+                "columns": list(realtime.columns) if not realtime.empty else [],
+                "data": _json_safe(realtime.tail(100)),
+            },
+            "official": {
+                "records": len(official),
+                "columns": list(official.columns) if not official.empty else [],
+                "data": _json_safe(official.tail(100)),
+            },
         }
     except Exception as e:
         logger.error(f"获取宏观数据失败: {e}")
@@ -159,7 +176,7 @@ async def get_news():
             "total": len(df),
             "avg_sentiment": avg_score,
             "label": "bullish" if avg_score > 0.2 else "bearish" if avg_score < -0.2 else "neutral",
-            "news": df.head(20).to_dict(orient="records"),
+            "news": _json_safe(df.head(20)),
         }
     except Exception as e:
         logger.error(f"获取新闻失败: {e}")

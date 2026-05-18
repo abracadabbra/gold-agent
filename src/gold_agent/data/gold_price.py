@@ -104,5 +104,10 @@ def fetch_all_gold(period: str = "1y") -> dict[str, pd.DataFrame]:
 
 
 # Alias for API compatibility
-def fetch_gold_price(period='1y'):
-    return fetch_gold_xauusd(period)
+def fetch_gold_price(source='intl', period='1y'):
+    """统一入口，根据 source 路由到对应数据源"""
+    if source == 'gld':
+        return fetch_gold_etf(period=period)
+    elif source == 'shfe':
+        return fetch_gold_spot_akshare(365)
+    return fetch_gold_xauusd(period=period)
