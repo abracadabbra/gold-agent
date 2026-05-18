@@ -15,10 +15,10 @@ class Settings(BaseSettings):
     # ── LLM ──
     openai_api_key: str = ""
     openai_base_url: str = "https://api.openai.com/v1"
-    llm_model_bull: str = "gpt-4.1"
-    llm_model_bear: str = "claude-sonnet-4-20250514"
-    llm_model_auditor: str = "gpt-4.1-mini"
-    llm_model_arbitrator: str = "gpt-4.1"
+    llm_model_bull: str = "gpt-5.5"
+    llm_model_bear: str = "claude-4.7-opus"
+    llm_model_auditor: str = "gpt-5.5-mini"
+    llm_model_arbitrator: str = "gpt-5.5"
 
     # ── FRED ──
     fred_api_key: str = ""
