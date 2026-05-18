@@ -23,7 +23,7 @@ jobs:
         run: uv python pin ${{ matrix.python-version }}
 
       - name: Install dependencies
-        run: uv sync --extra dev --all-extras
+        run: uv sync --all-extras
 
       - name: Ruff check
         run: uv run ruff check src/ tests/
