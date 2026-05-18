@@ -1,0 +1,32 @@
+{
+  "id": "improve-test-coverage",
+  "name": "improve-test-coverage",
+  "title": "提升测试覆盖率",
+  "description": "",
+  "status": "completed",
+  "dev_type": null,
+  "scope": null,
+  "package": null,
+  "priority": "P2",
+  "creator": "shentao",
+  "assignee": "shentao",
+  "createdAt": "2026-05-18",
+  "completedAt": "2026-05-18",
+  "branch": null,
+  "base_branch": "master",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [
+    "05-18-data-layer-tests",
+    "05-18-quant-layer-tests",
+    "05-18-debate-layer-tests",
+    "05-18-api-layer-tests",
+    "05-18-config-db-tests"
+  ],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {}
+}
