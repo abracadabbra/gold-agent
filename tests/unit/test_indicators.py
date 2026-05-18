@@ -1,7 +1,7 @@
 """技术指标单元测试"""
 
-import pandas as pd
 import numpy as np
+import pandas as pd
 import pytest
 
 from gold_agent.quant.indicators import compute_indicators, get_indicator_summary

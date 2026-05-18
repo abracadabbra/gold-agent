@@ -1,7 +1,10 @@
 """FastAPI 主入口"""
 
+import os
+import time
 from contextlib import asynccontextmanager
 from datetime import datetime
+from pathlib import Path
 
 from fastapi import FastAPI, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
@@ -23,6 +26,7 @@ async def lifespan(app: FastAPI):
     logger.info(f"  缓存: {settings.parquet_dir}")
 
     settings.ensure_dirs()
+    app.state.start_time = time.time()
 
     yield
 
@@ -96,26 +100,41 @@ async def health():
     }
 
 
+def _count_parquet_files(subdir: str) -> int:
+    """统计缓存目录中某个数据类型的 Parquet 文件数"""
+    data_dir = settings.parquet_dir / subdir
+    if data_dir.exists():
+        return len(list(data_dir.glob("*.parquet")))
+    return 0
+
+
+def _format_duration(seconds: float) -> str:
+    """将秒数格式化为可读的时间"""
+    days, remainder = divmod(int(seconds), 86400)
+    hours, remainder = divmod(remainder, 3600)
+    minutes, secs = divmod(remainder, 60)
+    if days > 0:
+        return f"{days}d {hours}h {minutes}m"
+    return f"{hours}h {minutes}m {secs}s"
+
+
 @app.get("/stats")
 async def stats():
     """系统统计端点"""
     ws_stats = ws_manager.get_stats()
-    
-    # 这里可以添加更多统计信息
-    # 比如数据库记录数、缓存命中率等
-    
+    uptime = _format_duration(time.time() - getattr(app.state, "start_time", time.time()))
+
+    cache_stats = {}
+    for key in ["gold_intl", "gold_shfe", "gold_gld", "macro_yfinance"]:
+        cache_stats[key] = _count_parquet_files(key)
+
     return {
         "websocket": ws_stats,
         "system": {
-            "uptime": "计算运行时间",
-            "memory_usage": "内存使用情况",
-            "disk_usage": "磁盘使用情况",
+            "uptime": uptime,
+            "version": "0.1.0",
         },
-        "data": {
-            "gold_prices_count": "金价记录数",
-            "predictions_count": "预测记录数",
-            "debates_count": "辩论记录数",
-        }
+        "cache": cache_stats,
     }
 
 

@@ -1,10 +1,10 @@
 """信号生成单元测试"""
 
-import pandas as pd
 import numpy as np
+import pandas as pd
 import pytest
 
-from gold_agent.quant.signals import generate_signal, Signal
+from gold_agent.quant.signals import Signal, generate_signal
 
 
 @pytest.fixture
