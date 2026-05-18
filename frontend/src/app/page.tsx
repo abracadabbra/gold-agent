@@ -1,3 +1,5 @@
+import Link from "next/link";
+
 type MetricCardProps = {
   label: string;
   value: string;
@@ -179,9 +181,14 @@ export default function Home() {
     <main className="min-h-screen">
       <div className="dashboard-shell">
         <section
-          className="paper-card paper-card-strong reveal-card grid gap-6 p-5 md:grid-cols-[1.15fr_3.35fr] md:p-7"
+          className="paper-card paper-card-strong reveal-card relative grid gap-6 p-5 md:grid-cols-[1.15fr_3.35fr] md:p-7"
           style={{ animationDelay: "40ms" }}
         >
+          <div className="absolute top-4 right-5 md:top-5 md:right-7">
+            <Link href="/dashboard" className="text-sm muted-copy hover:text-[var(--accent)] transition-colors">
+              数据面板 ↗
+            </Link>
+          </div>
           <div className="rounded-[24px] bg-[rgba(255,253,247,0.7)] p-4 md:p-5">
             <p className="eyebrow">Gold AI</p>
             <h1 className="mt-3 font-display text-4xl leading-none md:text-[3.2rem]">偏空</h1>
