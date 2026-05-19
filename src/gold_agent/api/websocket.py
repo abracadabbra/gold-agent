@@ -257,16 +257,71 @@ async def push_system_status(status_data: dict):
     })
 
 
-# 定时任务示例（可选）
+# 定时任务
+from gold_agent.data.cache import cache
+from gold_agent.data.gold_price import fetch_gold_price
+from gold_agent.data.news import fetch_news_with_sentiment
+from gold_agent.quant.signals import generate_signal, get_signal_summary
+
+
 async def periodic_price_push(interval_seconds: int = 60):
-    """定时推送金价（示例）"""
+    """定时推送金价"""
     while True:
         try:
-            # 这里可以调用实际的数据获取函数
-            # price_data = fetch_current_price()
-            # await push_price_update(price_data)
-            pass
+            df = cache.get(key="gold_intl", fetch_fn=fetch_gold_price, source="intl", period="1mo")
+            if not df.empty:
+                latest = df.iloc[-1]
+                await push_price_update({
+                    "date": str(latest["date"]),
+                    "open": float(latest["open"]),
+                    "high": float(latest["high"]),
+                    "low": float(latest["low"]),
+                    "close": float(latest["close"]),
+                    "volume": float(latest.get("volume", 0)),
+                })
+                logger.debug(f"定时推送: 金价 ${latest['close']:.2f}")
         except Exception as e:
-            logger.error(f"定时推送失败: {e}")
+            logger.error(f"定时推送金价失败: {e}")
+        await asyncio.sleep(interval_seconds)
 
+
+async def periodic_signal_push(interval_seconds: int = 60):
+    """定时推送交易信号"""
+    while True:
+        try:
+            df = cache.get(key="gold_intl", fetch_fn=fetch_gold_price, source="intl", period="1y")
+            if not df.empty:
+                signal = generate_signal(df)
+                summary = get_signal_summary(signal)
+                await push_signal_update({
+                    "signal": signal.to_dict(),
+                    "summary": summary,
+                })
+                logger.debug(f"定时推送: 信号 {signal['signal']}")
+        except Exception as e:
+            logger.error(f"定时推送信号失败: {e}")
+        await asyncio.sleep(interval_seconds)
+
+
+async def periodic_news_push(interval_seconds: int = 300):
+    """定时推送新闻"""
+    while True:
+        try:
+            df = fetch_news_with_sentiment()
+            if not df.empty:
+                avg_score = float(df["sentiment_score"].mean())
+                label = (
+                    "bullish" if avg_score > 0.2
+                    else "bearish" if avg_score < -0.2
+                    else "neutral"
+                )
+                await push_news_update({
+                    "total": len(df),
+                    "avg_sentiment": avg_score,
+                    "label": label,
+                    "articles": df.head(5).to_dict(orient="records"),
+                })
+                logger.debug(f"定时推送: 新闻 {len(df)} 条")
+        except Exception as e:
+            logger.error(f"定时推送新闻失败: {e}")
         await asyncio.sleep(interval_seconds)

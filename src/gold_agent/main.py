@@ -1,5 +1,6 @@
 """FastAPI 主入口"""
 
+import asyncio
 import time
 from contextlib import asynccontextmanager
 from datetime import datetime
@@ -14,7 +15,13 @@ from gold_agent.api.analysis import router as analysis_router
 from gold_agent.api.debate import router as debate_router
 from gold_agent.api.backtest import router as backtest_router
 from gold_agent.api.extra_data import router as extra_data_router
-from gold_agent.api.websocket import websocket_endpoint, manager as ws_manager
+from gold_agent.api.websocket import (
+    websocket_endpoint,
+    manager as ws_manager,
+    periodic_price_push,
+    periodic_signal_push,
+    periodic_news_push,
+)
 
 
 @asynccontextmanager
@@ -27,8 +34,19 @@ async def lifespan(app: FastAPI):
     settings.ensure_dirs()
     app.state.start_time = time.time()
 
+    # 后台定时推送
+    push_tasks = [
+        asyncio.create_task(periodic_price_push(60), name="price-push"),
+        asyncio.create_task(periodic_signal_push(60), name="signal-push"),
+        asyncio.create_task(periodic_news_push(300), name="news-push"),
+    ]
+    logger.info(f"启动 {len(push_tasks)} 个定时推送任务")
+
     yield
 
+    for t in push_tasks:
+        t.cancel()
+    await asyncio.gather(*push_tasks, return_exceptions=True)
     logger.info("GoldAgent 关闭")
 
 
