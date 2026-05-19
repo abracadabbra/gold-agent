@@ -76,3 +76,36 @@ Built a static Next.js landing page prototype for the gold dashboard based on th
 ### Next Steps
 
 - None - task complete
+
+
+## Session 3: Dashboard 数据可视化图表（Recharts + CSS Gauge）
+
+**Date**: 2026-05-19
+**Task**: Dashboard 数据可视化图表（Recharts + CSS Gauge）
+**Branch**: `master`
+
+### Summary
+
+引入 Recharts 图表库，新增4个图表组件: PriceChart(金价走势折线+成交量柱)、SignalGauge(CSS评分条)、IndicatorGauge(RSI/MACD/布林带仪表盘)、PredictionChart(预测区间带状图)
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `566d27c` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
