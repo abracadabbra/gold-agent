@@ -4,6 +4,10 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import Link from 'next/link';
 import { api } from '@/lib/api';
 import type { DebateResponse, BacktestResult } from '@/lib/types';
+import {
+  ComposedChart, Line, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
+  ResponsiveContainer, AreaChart, Area,
+} from 'recharts';
 
 /* ─── Shared UI ─── */
 
@@ -177,14 +181,38 @@ function SystemStatusCard({ refreshKey }: { refreshKey: number }) {
   );
 }
 
-function GoldPriceCard({ refreshKey }: { refreshKey: number }) {
+function ChartTooltip({ active, payload, label }: {
+  active?: boolean;
+  payload?: Array<{ payload: Record<string, unknown> }>;
+  label?: string;
+}) {
+  if (!active || !payload?.length) return null;
+  const d = payload[0]?.payload;
+  const fmt = (v: unknown) => v != null ? Number(v).toFixed(2) : '-';
+  const vol = (v: unknown) => v != null ? Number(v).toLocaleString() : '-';
+  return (
+    <div className="bg-[var(--surface-strong)] border border-[var(--border)] rounded-lg p-3 text-sm shadow-lg">
+      <p className="muted-copy mb-1">{label}</p>
+      <div className="space-y-0.5">
+        <p>开: {fmt(d?.open)}</p>
+        <p>高: {fmt(d?.high)}</p>
+        <p>低: {fmt(d?.low)}</p>
+        <p>收: <span style={{ color: '#d4a849' }}>{fmt(d?.close)}</span></p>
+        <p>量: {vol(d?.volume)}</p>
+      </div>
+    </div>
+  );
+}
+
+function PriceChartCard({ refreshKey }: { refreshKey: number }) {
   const { data, loading, error, execute } = useApi(() => api.gold());
   useEffect(() => { execute(); }, [execute, refreshKey]);
 
   if (loading) return <SectionCard title="行情数据" delay={90}><LoadingSkeleton /></SectionCard>;
   if (error || !data) return <ErrorCard title="行情数据" error={error || '无数据'} delay={90} onRetry={execute} />;
 
-  const recent = data.data.slice(-10);
+  const chartData = data.data.slice(-100);
+  if (!chartData.length) return <SectionCard title="行情数据" delay={90}><p className="muted-copy">无数据</p></SectionCard>;
 
   return (
     <SectionCard title="行情数据" delay={90}>
@@ -195,10 +223,17 @@ function GoldPriceCard({ refreshKey }: { refreshKey: number }) {
         <span className="data-pill">源: {data.source}</span>
         <span className="data-pill">记录: {data.records}</span>
       </div>
-      <DataTable
-        columns={['date', 'open', 'high', 'low', 'close', 'volume']}
-        rows={recent as unknown as Record<string, unknown>[]}
-      />
+      <ResponsiveContainer width="100%" height={280}>
+        <ComposedChart data={chartData}>
+          <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
+          <XAxis dataKey="date" tick={{ fontSize: 12 }} stroke="var(--muted)" />
+          <YAxis yAxisId="price" stroke="var(--muted)" tick={{ fontSize: 12 }} />
+          <YAxis yAxisId="volume" orientation="right" hide />
+          <Tooltip content={<ChartTooltip />} />
+          <Bar yAxisId="volume" dataKey="volume" fill="rgba(128,128,128,0.3)" barSize={4} />
+          <Line yAxisId="price" type="monotone" dataKey="close" stroke="#d4a849" dot={false} strokeWidth={2} />
+        </ComposedChart>
+      </ResponsiveContainer>
     </SectionCard>
   );
 }
@@ -214,7 +249,7 @@ function signalTone(s: string) {
   return 'var(--muted)';
 }
 
-function SignalCard({ refreshKey }: { refreshKey: number }) {
+function SignalGaugeCard({ refreshKey }: { refreshKey: number }) {
   const { data, loading, error, execute } = useApi(() => api.signal());
   useEffect(() => { execute(); }, [execute, refreshKey]);
 
@@ -223,11 +258,27 @@ function SignalCard({ refreshKey }: { refreshKey: number }) {
 
   const sig = data.signal;
   const tone = signalTone(sig.signal);
-  const pct = ((sig.score + 100) / 2).toFixed(0);
+  const pct = Math.min(100, Math.max(0, ((sig.score + 100) / 200) * 100));
 
   return (
     <SectionCard title="交易信号" delay={130}>
       <p className="text-2xl font-display mb-2" style={{ color: tone }}>{signalLabel(sig.signal)}</p>
+
+      {/* Score gauge bar */}
+      <div className="relative mb-1">
+        <div className="h-3 rounded-full" style={{
+          background: 'linear-gradient(to right, #e74c3c, #e8a87c, #95a5a6, #a8d8a8, #27ae60)',
+        }} />
+        <div className="flex justify-between text-xs muted-copy mt-0.5">
+          <span>-100</span>
+          <span>0</span>
+          <span>+100</span>
+        </div>
+        {/* Pointer triangle */}
+        <div className="absolute -top-1 transform -translate-x-1/2 transition-all duration-500" style={{ left: `${pct}%` }}>
+          <div className="w-0 h-0 border-l-[8px] border-r-[8px] border-t-[10px] border-l-transparent border-r-transparent" style={{ borderTopColor: tone }} />
+        </div>
+      </div>
 
       <div className="space-y-1">
         <MetricBadge label="评分" value={`${sig.score} / 100`} />
@@ -235,19 +286,6 @@ function SignalCard({ refreshKey }: { refreshKey: number }) {
         {sig.stop_loss && <MetricBadge label="止损" value={sig.stop_loss.toFixed(2)} />}
         {sig.take_profit && <MetricBadge label="止盈" value={sig.take_profit.toFixed(2)} />}
       </div>
-
-      <div className="mt-3 h-2 rounded-full bg-gray-200 relative overflow-hidden">
-        <div className="absolute left-1/2 top-0 bottom-0 w-0.5 bg-gray-400 z-10" />
-        <div
-          className="absolute top-0 bottom-0 rounded-full transition-all duration-500"
-          style={{
-            left: `${sig.score >= 0 ? 50 : 50 + sig.score / 2}%`,
-            width: `${Math.abs(sig.score)}%`,
-            backgroundColor: tone,
-          }}
-        />
-      </div>
-      <p className="text-xs text-right muted-copy mt-1">{pct}%</p>
 
       {sig.reasons?.length > 0 && (
         <ul className="report-list mt-3 space-y-0.5 text-sm">
@@ -258,20 +296,113 @@ function SignalCard({ refreshKey }: { refreshKey: number }) {
   );
 }
 
-const indicatorGroups = [
-  { label: '移动平均线', keys: ['ma5', 'ma10', 'ma20', 'ma60', 'ema12', 'ema26'] },
-  { label: 'MACD', keys: ['macd_line', 'macd_signal', 'macd_histogram'] },
-  { label: 'RSI / 随机指标', keys: ['rsi14', 'stoch_k', 'stoch_d'] },
-  { label: '布林带', keys: ['bb_upper', 'bb_middle', 'bb_lower'] },
-  { label: 'ATR', keys: ['atr14'] },
-  { label: 'ADX', keys: ['adx'] },
-  { label: 'Supertrend', keys: ['supertrend', 'supertrend_direction'] },
-  { label: 'OBV', keys: ['obv'] },
-];
+function RsiGauge({ ind }: { ind: Record<string, number> }) {
+  const rsi = ind.rsi14;
+  if (rsi == null) return <p className="muted-copy">RSI 数据不可用</p>;
+  const pct = Math.min(100, Math.max(0, (rsi / 100) * 100));
+  const color = rsi < 30 ? 'var(--danger)' : rsi > 70 ? 'var(--accent)' : 'var(--muted)';
+  return (
+    <div>
+      <p className="text-lg font-medium mb-1">RSI: <span style={{ color }}>{rsi.toFixed(2)}</span></p>
+      <div className="relative h-4 rounded-full overflow-hidden border border-[var(--border)]"
+        style={{ background: 'linear-gradient(to right, #ef4444, #fef3c7, #22c55e)' }}>
+        <div className="absolute top-0 bottom-0 w-0.5 bg-gray-500 z-10" style={{ left: '30%' }} />
+        <div className="absolute top-0 bottom-0 w-0.5 bg-gray-500 z-10" style={{ left: '70%' }} />
+        <div className="absolute top-0 bottom-0 w-[3px] bg-[var(--foreground)] z-20 transition-all duration-500 rounded-full"
+          style={{ left: `${pct}%`, transform: 'translateX(-50%)' }} />
+      </div>
+      <div className="flex justify-between text-xs muted-copy mt-0.5">
+        <span>0</span>
+        <span>30 超卖</span>
+        <span>70 超买</span>
+        <span>100</span>
+      </div>
+    </div>
+  );
+}
 
-function IndicatorsCard({ refreshKey }: { refreshKey: number }) {
+function MacdGauge({ ind }: { ind: Record<string, number> }) {
+  const line = ind.macd_line;
+  const signal = ind.macd_signal;
+  const hist = ind.macd_histogram;
+  if (line == null && signal == null && hist == null) return <p className="muted-copy">MACD 数据不可用</p>;
+  return (
+    <div className="space-y-3">
+      {line != null && (
+        <div className="flex justify-between items-center p-2 rounded-lg border border-[var(--border)]">
+          <span className="muted-copy">MACD 线</span>
+          <span className="font-medium">{line.toFixed(4)}</span>
+        </div>
+      )}
+      {signal != null && (
+        <div className="flex justify-between items-center p-2 rounded-lg border border-[var(--border)]">
+          <span className="muted-copy">信号线</span>
+          <span className="font-medium">{signal.toFixed(4)}</span>
+        </div>
+      )}
+      {hist != null && (
+        <div>
+          <div className="flex justify-between items-center mb-1">
+            <span className="muted-copy">柱状图</span>
+            <span className="font-medium" style={{ color: hist >= 0 ? '#22c55e' : '#ef4444' }}>{hist.toFixed(4)}</span>
+          </div>
+          <div className="relative h-1.5 rounded-full overflow-hidden bg-gray-200">
+            <div className="absolute top-0 bottom-0 left-1/2 w-0.5 bg-gray-400" />
+            <div className="absolute top-0 bottom-0 rounded-full transition-all" style={{
+              width: `${Math.min(100, Math.abs(hist) * 2000)}%`,
+              maxWidth: '45%',
+              left: hist >= 0 ? '50%' : undefined,
+              right: hist < 0 ? '50%' : undefined,
+              backgroundColor: hist >= 0 ? '#22c55e' : '#ef4444',
+            }} />
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function BbGauge({ ind, price }: { ind: Record<string, number>; price: number }) {
+  const upper = ind.bb_upper;
+  const middle = ind.bb_middle;
+  const lower = ind.bb_lower;
+  if (upper == null || middle == null || lower == null) return <p className="muted-copy">布林带数据不可用</p>;
+  const range = upper - lower;
+  const position = range > 0 ? ((price - lower) / range) * 100 : 50;
+  return (
+    <div className="space-y-3">
+      <div className="flex justify-between items-center p-2 rounded-lg border border-[var(--border)]">
+        <span className="muted-copy">上轨</span>
+        <span className="font-medium">{upper.toFixed(2)}</span>
+      </div>
+      <div className="flex justify-between items-center p-2 rounded-lg border border-[var(--accent-soft)]">
+        <span className="muted-copy">中轨 (均线)</span>
+        <span className="font-medium text-[var(--accent)]">{middle.toFixed(2)}</span>
+      </div>
+      <div className="flex justify-between items-center p-2 rounded-lg border border-[var(--border)]">
+        <span className="muted-copy">下轨</span>
+        <span className="font-medium">{lower.toFixed(2)}</span>
+      </div>
+      <div>
+        <div className="flex justify-between text-xs muted-copy mb-1">
+          <span>下轨</span>
+          <span>位置: {position.toFixed(1)}%</span>
+          <span>上轨</span>
+        </div>
+        <div className="relative h-4 rounded-full overflow-hidden border border-[var(--border)]"
+          style={{ background: 'linear-gradient(to right, #3b82f6, #22c55e, #ef4444)' }}>
+          <div className="absolute top-0 bottom-0 w-[3px] bg-[var(--foreground)] z-10 rounded-full transition-all duration-500"
+            style={{ left: `${Math.min(100, Math.max(0, position))}%`, transform: 'translateX(-50%)' }} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function IndicatorGaugeCard({ refreshKey }: { refreshKey: number }) {
   const { data, loading, error, execute } = useApi(() => api.indicators());
   useEffect(() => { execute(); }, [execute, refreshKey]);
+  const [tab, setTab] = useState('rsi');
 
   if (loading) return <SectionCard title="技术指标" delay={170}><LoadingSkeleton /></SectionCard>;
   if (error || !data) return <ErrorCard title="技术指标" error={error || '无数据'} delay={170} onRetry={execute} />;
@@ -280,36 +411,43 @@ function IndicatorsCard({ refreshKey }: { refreshKey: number }) {
 
   return (
     <SectionCard title="技术指标" delay={170}>
-      <p className="metric-value text-[var(--accent)] mb-3">{data.price.toFixed(2)}</p>
-      <div className="grid gap-3 sm:grid-cols-2">
-        {indicatorGroups.map(group => {
-          const items = group.keys.filter(k => ind[k] != null);
-          if (!items.length) return null;
-          return (
-            <div key={group.label} className="p-3 rounded-xl border border-[var(--border)] bg-[rgba(255,253,247,0.4)]">
-              <p className="text-xs font-semibold muted-copy uppercase tracking-wider mb-1.5">{group.label}</p>
-              <div className="space-y-0.5">
-                {items.map(k => (
-                  <div key={k} className="flex justify-between text-sm">
-                    <span className="muted-copy">{k}</span>
-                    <span className="font-medium">{typeof ind[k] === 'number' ? ind[k].toFixed(4) : String(ind[k])}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          );
-        })}
+      <p className="metric-value text-[var(--accent)] mb-2">{data.price.toFixed(2)}</p>
+
+      <div className="flex gap-2 mb-3">
+        {['rsi', 'macd', 'bb'].map(t => (
+          <button
+            key={t}
+            onClick={() => setTab(t)}
+            className={`data-pill cursor-pointer transition-colors ${tab === t ? 'border-[var(--accent)] text-[var(--accent)]' : ''}`}
+          >
+            {t === 'rsi' ? 'RSI' : t === 'macd' ? 'MACD' : '布林带'}
+          </button>
+        ))}
       </div>
+
+      {tab === 'rsi' && <RsiGauge ind={ind} />}
+      {tab === 'macd' && <MacdGauge ind={ind} />}
+      {tab === 'bb' && <BbGauge ind={ind} price={data.price} />}
+
+      {data.summary && (
+        <details className="mt-3">
+          <summary className="text-sm cursor-pointer muted-copy hover:text-[var(--accent)]">查看详情</summary>
+          <pre className="mt-2 text-xs whitespace-pre-wrap text-[var(--muted)] leading-6">{data.summary}</pre>
+        </details>
+      )}
     </SectionCard>
   );
 }
 
-function PredictionCard({ refreshKey }: { refreshKey: number }) {
+function PredictionChartCard({ refreshKey }: { refreshKey: number }) {
   const { data, loading, error, execute } = useApi(() => api.prediction());
   useEffect(() => { execute(); }, [execute, refreshKey]);
 
   if (loading) return <SectionCard title="价格预测" delay={210}><LoadingSkeleton /></SectionCard>;
   if (error || !data) return <ErrorCard title="价格预测" error={error || '无数据'} delay={210} onRetry={execute} />;
+
+  const chartData = data.prediction;
+  if (!chartData.length) return <SectionCard title="价格预测" delay={210}><p className="muted-copy">无数据</p></SectionCard>;
 
   return (
     <SectionCard title="价格预测" delay={210}>
@@ -317,10 +455,32 @@ function PredictionCard({ refreshKey }: { refreshKey: number }) {
         <span className="data-pill">趋势: {data.trend === 'up' ? '↑ 上涨' : data.trend === 'down' ? '↓ 下跌' : '→ 震荡'}</span>
         <span className="data-pill">预测项: {data.prediction.length}</span>
       </div>
-      <DataTable
-        columns={['ds', 'yhat', 'yhat_lower', 'yhat_upper']}
-        rows={data.prediction as unknown as Record<string, unknown>[]}
-      />
+      <ResponsiveContainer width="100%" height={280}>
+        <AreaChart data={chartData}>
+          <defs>
+            <linearGradient id="bandGrad" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="5%" stopColor="#d4a849" stopOpacity={0.15} />
+              <stop offset="95%" stopColor="#d4a849" stopOpacity={0.03} />
+            </linearGradient>
+          </defs>
+          <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
+          <XAxis dataKey="ds" tick={{ fontSize: 12 }} stroke="var(--muted)" />
+          <YAxis stroke="var(--muted)" tick={{ fontSize: 12 }} />
+          <Tooltip
+            contentStyle={{ background: 'var(--surface-strong)', border: '1px solid var(--border)', borderRadius: 8, fontSize: 13 }}
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            formatter={(value: any, name: any) => {
+              const labels: Record<string, string> = { yhat: '预测值', yhat_lower: '下限', yhat_upper: '上限' };
+              return [Number(value).toFixed(2), labels[name] || name];
+            }}
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            labelFormatter={(label: any) => `日期: ${label}`}
+          />
+          <Area type="monotone" dataKey="yhat_upper" fill="url(#bandGrad)" stroke="none" />
+          <Area type="monotone" dataKey="yhat_lower" fill="var(--surface-strong)" stroke="none" />
+          <Line type="monotone" dataKey="yhat" stroke="#d4a849" strokeWidth={2} dot={false} />
+        </AreaChart>
+      </ResponsiveContainer>
       {data.summary && (
         <details className="mt-3">
           <summary className="text-sm cursor-pointer muted-copy hover:text-[var(--accent)]">查看分析文本</summary>
@@ -761,17 +921,17 @@ export default function DashboardPage() {
             <SystemStatusCard refreshKey={refreshKey} />
           </div>
 
-          <GoldPriceCard refreshKey={refreshKey} />
-          <SignalCard refreshKey={refreshKey} />
+          <PriceChartCard refreshKey={refreshKey} />
+          <SignalGaugeCard refreshKey={refreshKey} />
           <NewsCard refreshKey={refreshKey} />
 
           <div className="md:col-span-2">
-            <IndicatorsCard refreshKey={refreshKey} />
+            <IndicatorGaugeCard refreshKey={refreshKey} />
           </div>
           <MacroCard refreshKey={refreshKey} />
 
           <div className="md:col-span-2">
-            <PredictionCard refreshKey={refreshKey} />
+            <PredictionChartCard refreshKey={refreshKey} />
           </div>
           <BacktestCard refreshKey={refreshKey} />
 
