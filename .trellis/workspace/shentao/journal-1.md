@@ -109,3 +109,36 @@ Built a static Next.js landing page prototype for the gold dashboard based on th
 ### Next Steps
 
 - None - task complete
+
+
+## Session 4: WebSocket 后端定时推送
+
+**Date**: 2026-05-19
+**Task**: WebSocket 后端定时推送
+**Branch**: `master`
+
+### Summary
+
+实现periodic_price_push/periodic_signal_push/periodic_news_push三个后台定时推送任务，注册到main.py lifespan，服务启动自动运行、关闭自动取消
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `01381fb` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

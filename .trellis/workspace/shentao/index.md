@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 3
+- **Total Sessions**: 4
 - **Last Active**: 2026-05-19
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~111 | Active |
+| `journal-1.md` | ~144 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 4 | 2026-05-19 | WebSocket 后端定时推送 | `01381fb` | `master` |
 | 3 | 2026-05-19 | Dashboard 数据可视化图表（Recharts + CSS Gauge） | `566d27c` | `master` |
 | 2 | 2026-05-19 | 新增金价报告数据源（7类数据 + 前端展示） | `8a24da8`, `0661846`, `b550487`, `6b60845`, `34533a8`, `083eca3` | `master` |
 | 1 | 2026-05-18 | Frontend dashboard prototype | `615e133` | `master` |
