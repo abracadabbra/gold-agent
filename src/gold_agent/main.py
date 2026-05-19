@@ -13,6 +13,7 @@ from gold_agent.config import settings
 from gold_agent.api.analysis import router as analysis_router
 from gold_agent.api.debate import router as debate_router
 from gold_agent.api.backtest import router as backtest_router
+from gold_agent.api.extra_data import router as extra_data_router
 from gold_agent.api.websocket import websocket_endpoint, manager as ws_manager
 
 
@@ -51,6 +52,7 @@ app.add_middleware(
 app.include_router(analysis_router)
 app.include_router(debate_router)
 app.include_router(backtest_router)
+app.include_router(extra_data_router)
 
 
 # WebSocket 端点
@@ -123,7 +125,12 @@ async def stats():
     uptime = _format_duration(time.time() - getattr(app.state, "start_time", time.time()))
 
     cache_stats = {}
-    for key in ["gold_intl", "gold_shfe", "gold_gld", "macro_yfinance"]:
+    extra_keys = [
+        "central_bank_reserves", "cot", "etf_flow", "geopol",
+        "fedwatch", "aisc", "china_cpi", "china_ppi", "china_pmi",
+        "china_m2", "china_gdp", "china_lpr", "china_usd_cny",
+    ]
+    for key in ["gold_intl", "gold_shfe", "gold_gld", "macro_yfinance"] + extra_keys:
         cache_stats[key] = _count_parquet_files(key)
 
     return {

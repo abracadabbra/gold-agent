@@ -64,6 +64,12 @@ dev = [
     "mypy>=1.13.0",
 ]
 
+# 外部数据源
+extras = [
+    "cot-reports",
+    "cme-fedwatch",
+]
+
 [tool.hatch.build.targets.wheel]
 packages = ["src/gold_agent"]
 
