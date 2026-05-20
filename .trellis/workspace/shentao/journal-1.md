@@ -142,3 +142,36 @@ Built a static Next.js landing page prototype for the gold dashboard based on th
 ### Next Steps
 
 - None - task complete
+
+
+## Session 5: 数据库接入（SQLite）
+
+**Date**: 2026-05-20
+**Task**: 数据库接入（SQLite）
+**Branch**: `master`
+
+### Summary
+
+切换默认数据库为 SQLite，新增 db/session.py（engine+session）和 db/repository.py（各模型save函数），periodic push 自动写入 GoldPrice 和 TradeSignal 到 DB
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `48f381d` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
