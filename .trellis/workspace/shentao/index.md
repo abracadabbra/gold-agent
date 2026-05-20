@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 5
+- **Total Sessions**: 6
 - **Last Active**: 2026-05-20
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~177 | Active |
+| `journal-1.md` | ~210 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 6 | 2026-05-20 | 财务日历 + 数据源修复 + 中央储备重构 | `48348aa` | `master` |
 | 5 | 2026-05-20 | 数据库接入（SQLite） | `48f381d` | `master` |
 | 4 | 2026-05-19 | WebSocket 后端定时推送 | `01381fb` | `master` |
 | 3 | 2026-05-19 | Dashboard 数据可视化图表（Recharts + CSS Gauge） | `566d27c` | `master` |

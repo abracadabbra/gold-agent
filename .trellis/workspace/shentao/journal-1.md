@@ -175,3 +175,36 @@ Built a static Next.js landing page prototype for the gold dashboard based on th
 ### Next Steps
 
 - None - task complete
+
+
+## Session 6: 财务日历 + 数据源修复 + 中央储备重构
+
+**Date**: 2026-05-20
+**Task**: 财务日历 + 数据源修复 + 中央储备重构
+**Branch**: `master`
+
+### Summary
+
+Calendar API+frontend, 5 bug fixes (TradeSignal/Kitco/CB dt/usd_cny/FRED), central bank IMF→static rewrite, 10 new tests, FRED gold series removal
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `48348aa` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
