@@ -148,3 +148,30 @@ export interface ExtraDataResponse {
   china_macro: Record<string, ChinaMacroItem>;
   aisc: ExtraDataItem;
 }
+
+/* ─── Calendar (财经日历) ─── */
+
+export interface CalendarEvent {
+  date: string;
+  event: string;
+  importance: string;
+  type: string;
+  color: string;
+  type_label: string;
+}
+
+export interface NextCalendarEvent {
+  date: string;
+  event: string;
+  type: string;
+  type_label: string;
+  importance: string;
+  color: string;
+}
+
+export interface CalendarResponse {
+  records: number;
+  next_event: NextCalendarEvent | null;
+  data: CalendarEvent[];
+  error?: string;
+}

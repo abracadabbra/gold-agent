@@ -316,7 +316,7 @@ async def periodic_signal_push(interval_seconds: int = 60):
                     "signal": signal.to_dict(),
                     "summary": summary,
                 })
-                logger.debug(f"定时推送: 信号 {signal['signal']}")
+                logger.debug(f"定时推送: 信号 {signal.signal.value}")
         except Exception as e:
             logger.error(f"定时推送信号失败: {e}")
         await asyncio.sleep(interval_seconds)

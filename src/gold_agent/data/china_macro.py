@@ -52,7 +52,7 @@ def _fetch_akshare(func_path: str, indicator: str) -> pd.DataFrame:
         value_cols = [c for c in df.columns if c not in date_cols]
 
         if date_cols:
-            df["date"] = pd.to_datetime(df[date_cols[0]], errors="coerce")
+            df["date"] = pd.to_datetime(df[date_cols[0]], errors="coerce", format="mixed")
             # 保留第一个数值列作为 value
             skip_labels = {"date", "日期", "时间", "指标名称", "指标"}
             numeric_cols = [c for c in value_cols if c.lower() not in skip_labels]  # noqa: E501
@@ -67,7 +67,7 @@ def _fetch_akshare(func_path: str, indicator: str) -> pd.DataFrame:
             if isinstance(df.index, pd.DatetimeIndex | pd.PeriodIndex):
                 df = df.reset_index()
                 df = df.rename(columns={"index": "date"})
-                df["date"] = pd.to_datetime(df["date"], errors="coerce")
+                df["date"] = pd.to_datetime(df["date"], errors="coerce", format="mixed")
                 numeric_cols = [
                     c for c in df.columns
                     if c != "date" and pd.api.types.is_numeric_dtype(df[c])
@@ -122,8 +122,27 @@ def fetch_china_lpr() -> pd.DataFrame:
 
 
 def fetch_china_fx() -> pd.DataFrame:
-    """人民币汇率"""
-    return _fetch_akshare("ak.fx_spot_quote", "usd_cny")
+    """人民币汇率（实时快照）"""
+    try:
+        import akshare as ak
+        df = ak.fx_spot_quote()
+        if df.empty:
+            return pd.DataFrame()
+
+        # 筛选 USD/CNY 并添加日期
+        cny = df[df["货币对"] == "USD/CNY"].copy()
+        if cny.empty:
+            cny = df.iloc[[0]].copy()
+
+        cny["date"] = pd.Timestamp.now().normalize()
+        cny["value"] = (pd.to_numeric(cny["买报价"], errors="coerce")
+                        + pd.to_numeric(cny["卖报价"], errors="coerce")) / 2
+        result = cny[["date", "value"]].dropna()
+        logger.info(f"[china_macro] usd_cny: {len(result)} 行")
+        return result
+    except Exception as e:
+        logger.warning(f"[china_macro] usd_cny 获取失败: {e}")
+        return pd.DataFrame()
 
 
 def fetch_all_china_macro() -> dict[str, pd.DataFrame]:

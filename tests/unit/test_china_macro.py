@@ -37,8 +37,9 @@ def _mock_lpr_df():
 def _mock_fx_df():
     """模拟 fx_spot_quote 返回值"""
     return pd.DataFrame({
-        "日期": pd.to_datetime(["2024-01-01"]),
-        "收盘价": [7.12],
+        "货币对": ["USD/CNY", "EUR/CNY"],
+        "买报价": [7.12, 7.65],
+        "卖报价": [7.13, 7.67],
     })
 
 

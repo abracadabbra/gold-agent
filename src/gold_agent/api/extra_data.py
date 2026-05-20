@@ -24,6 +24,7 @@ from gold_agent.data.china_macro import (
 from gold_agent.data.central_bank import fetch_central_bank_reserves
 from gold_agent.data.etf_flow import fetch_etf_flow
 from gold_agent.data.aisc import fetch_aisc
+from gold_agent.data.calendar import fetch_calendar, get_upcoming_events, get_next_major_event
 
 router = APIRouter(prefix="/api/analysis", tags=["数据补充"])
 
@@ -111,3 +112,28 @@ async def get_extra_data():
     results["aisc"] = _safe_fetch("aisc", fetch_aisc)
 
     return results
+
+
+@router.get("/calendar")
+async def get_calendar(
+    start_date: str | None = None,
+    end_date: str | None = None,
+    days: int = 60,
+):
+    """财经日历（mock 数据）"""
+    try:
+        if start_date and end_date:
+            df = fetch_calendar(start_date, end_date)
+        else:
+            df = get_upcoming_events(days)
+
+        next_event = get_next_major_event()
+
+        return {
+            "records": len(df),
+            "next_event": next_event,
+            "data": df.to_dict(orient="records"),
+        }
+    except Exception as e:
+        logger.error(f"获取财经日历失败: {e}")
+        return {"records": 0, "next_event": None, "data": [], "error": str(e)}

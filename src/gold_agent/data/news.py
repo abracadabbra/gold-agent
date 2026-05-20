@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 RSS_FEEDS = {
     "google_news": "https://news.google.com/rss/search?q=gold+price&hl=en-US&gl=US&ceid=US:en",
     "reuters_gold": "https://news.google.com/rss/search?q=site:reuters.com+gold&hl=en-US",
-    "kitco": "https://www.kitco.com/rss/gold.xml",
+    "mining_com": "https://www.mining.com/feed",
 }
 
 # 情绪关键词

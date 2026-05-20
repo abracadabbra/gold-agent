@@ -83,7 +83,6 @@ _FRED_SERIES = {
     "us_10y_yield": ("DGS10", "10年期美债收益率 (日频)"),
     "us_2y_yield": ("DGS2", "2年期美债收益率 (日频)"),
     "tips_yield": ("DFII10", "10年期 TIPS 收益率 (实际利率)"),
-    "gold_reserve": ("GOLDAMGBD228NLBM", "伦敦金定盘价 (美元/盎司)"),
 }
 
 

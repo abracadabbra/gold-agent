@@ -12,6 +12,7 @@ import type {
   StatsResponse,
   QuickAnalysisResponse,
   ExtraDataResponse,
+  CalendarResponse,
 } from './types';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE || 'http://localhost:8000';
@@ -66,4 +67,7 @@ export const api = {
     ),
 
   extraData: () => fetchJson<ExtraDataResponse>('/api/analysis/extra'),
+
+  calendar: (days = 60) =>
+    fetchJson<CalendarResponse>(`/api/analysis/calendar?days=${days}`),
 };
