@@ -24,7 +24,7 @@ class Settings(BaseSettings):
     fred_api_key: str = ""
 
     # ── 数据库 ──
-    database_url: str = "postgresql+asyncpg://gold:gold@localhost:5432/gold_agent"
+    database_url: str = "sqlite:///./data/gold_agent.db"
     redis_url: str = "redis://localhost:6379/0"
 
     # ── 缓存路径 ──

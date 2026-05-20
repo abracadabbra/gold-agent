@@ -11,6 +11,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 from gold_agent.config import settings
+from gold_agent.db.session import init_db
 from gold_agent.api.analysis import router as analysis_router
 from gold_agent.api.debate import router as debate_router
 from gold_agent.api.backtest import router as backtest_router
@@ -32,6 +33,9 @@ async def lifespan(app: FastAPI):
     logger.info(f"  缓存: {settings.parquet_dir}")
 
     settings.ensure_dirs()
+    init_db()
+    logger.info("数据库表已创建/验证")
+
     app.state.start_time = time.time()
 
     # 后台定时推送

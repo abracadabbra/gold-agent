@@ -262,6 +262,8 @@ from gold_agent.data.cache import cache
 from gold_agent.data.gold_price import fetch_gold_price
 from gold_agent.data.news import fetch_news_with_sentiment
 from gold_agent.quant.signals import generate_signal, get_signal_summary
+from gold_agent.db.repository import save_gold_prices, save_trade_signal
+from gold_agent.db.session import SessionLocal
 
 
 async def periodic_price_push(interval_seconds: int = 60):
@@ -270,6 +272,12 @@ async def periodic_price_push(interval_seconds: int = 60):
         try:
             df = cache.get(key="gold_intl", fetch_fn=fetch_gold_price, source="intl", period="1mo")
             if not df.empty:
+                # 写入数据库
+                records = df.to_dict(orient="records")
+                with SessionLocal() as db:
+                    save_gold_prices(db, records)
+
+                # 推送
                 latest = df.iloc[-1]
                 await push_price_update({
                     "date": str(latest["date"]),
@@ -293,6 +301,17 @@ async def periodic_signal_push(interval_seconds: int = 60):
             if not df.empty:
                 signal = generate_signal(df)
                 summary = get_signal_summary(signal)
+
+                # 写入数据库
+                signal_dict = {
+                    "date": df.iloc[-1]["date"],
+                    "source": "intl",
+                    **signal.to_dict()
+                }
+                with SessionLocal() as db:
+                    save_trade_signal(db, signal_dict)
+
+                # 推送
                 await push_signal_update({
                     "signal": signal.to_dict(),
                     "summary": summary,

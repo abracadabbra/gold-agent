@@ -140,7 +140,14 @@ class DataCache:
 
     # ---- 统一接口 ----
 
-    def get(self, key: str, fetch_fn, use_cache: bool = True, **kwargs) -> pd.DataFrame:
+    def get(
+        self,
+        key: str,
+        fetch_fn,
+        use_cache: bool = True,
+        db_save_fn=None,
+        **kwargs
+    ) -> pd.DataFrame:
         """
         统一缓存获取: 先 Redis → 再 Parquet → 最后调 fetch_fn
 
@@ -148,6 +155,7 @@ class DataCache:
             key: 缓存键名
             fetch_fn: 数据获取函数 (返回 DataFrame)
             use_cache: 是否使用缓存
+            db_save_fn: 可选的 DB 保存回调，传入 (records: list[dict])
             **kwargs: 传递给 fetch_fn 的参数
         """
         # 1. 尝试 Redis
@@ -171,6 +179,12 @@ class DataCache:
         if not df.empty:
             self.save_parquet(key, df)
             self.set_redis(key, df)
+            if db_save_fn:
+                try:
+                    records = df.to_dict(orient="records")
+                    db_save_fn(records)
+                except Exception as e:
+                    logger.warning(f"DB 保存回调失败 ({key}): {e}")
 
         return df
 
