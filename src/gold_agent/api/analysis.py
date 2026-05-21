@@ -134,9 +134,22 @@ async def get_prediction(
         forecast = prediction["forecast"]
         if "ds" in forecast.columns:
             forecast["ds"] = forecast["ds"].astype(str)
+        elif "date" in forecast.columns:
+            forecast = forecast.rename(columns={
+                "date": "ds",
+                "predicted": "yhat",
+                "lower_bound": "yhat_lower",
+                "upper_bound": "yhat_upper",
+            })
+
+        # 取最近 60 天历史价格作为上下文
+        history_df = df.tail(60)[["date", "close"]].copy()
+        history_df.columns = ["ds", "close"]
+        history_df["ds"] = history_df["ds"].astype(str)
 
         return {
             "prediction": _json_safe(forecast),
+            "history": _json_safe(history_df),
             "trend": prediction["trend_direction"],
             "summary": summary,
         }

@@ -1,20 +1,21 @@
 'use client';
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import Link from 'next/link';
 import { api, useWebSocket } from '@/lib/api';
-import type { DebateResponse, BacktestResult, CalendarResponse } from '@/lib/types';
+import type { DebateResponse, BacktestResult, GoldPriceResponse, IndicatorsResponse, OhlcvPoint } from '@/lib/types';
 import {
-  ComposedChart, Line, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
+  Line, XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, AreaChart, Area,
 } from 'recharts';
+import { createChart, ColorType, CrosshairMode, CandlestickSeries, LineSeries, HistogramSeries } from 'lightweight-charts';
 
 /* ─── Shared UI ─── */
 
 function SectionCard({
   title, children, delay = 0, className = '',
 }: {
-  title: string;
+  title: string | React.ReactNode;
   children: React.ReactNode;
   delay?: number;
   className?: string;
@@ -40,14 +41,15 @@ function LoadingSkeleton() {
   );
 }
 
-function ErrorCard({ title, error, delay, onRetry }: {
+function ErrorCard({ title, error, delay, onRetry, className = '' }: {
   title: string;
   error: string;
   delay: number;
   onRetry: () => void;
+  className?: string;
 }) {
   return (
-    <SectionCard title={title} delay={delay}>
+    <SectionCard title={title} delay={delay} className={className}>
       <p className="text-[var(--danger)]">{error}</p>
       <button
         onClick={onRetry}
@@ -133,8 +135,10 @@ function useApi<T>(fetcher: () => Promise<T>) {
     fetcherRef.current = fetcher;
   });
 
-  const execute = useCallback(async () => {
-    setLoading(true);
+  const execute = useCallback(async (options?: { silent?: boolean }) => {
+    if (!options?.silent) {
+      setLoading(true);
+    }
     setError(null);
     try {
       setData(await fetcherRef.current());
@@ -181,59 +185,372 @@ function SystemStatusCard({ refreshKey }: { refreshKey: number }) {
   );
 }
 
-function ChartTooltip({ active, payload, label }: {
-  active?: boolean;
-  payload?: Array<{ payload: Record<string, unknown> }>;
-  label?: string;
-}) {
-  if (!active || !payload?.length) return null;
-  const d = payload[0]?.payload;
-  const fmt = (v: unknown) => v != null ? Number(v).toFixed(2) : '-';
-  const vol = (v: unknown) => v != null ? Number(v).toLocaleString() : '-';
-  return (
-    <div className="bg-[var(--surface-strong)] border border-[var(--border)] rounded-lg p-3 text-sm shadow-lg">
-      <p className="muted-copy mb-1">{label}</p>
-      <div className="space-y-0.5">
-        <p>开: {fmt(d?.open)}</p>
-        <p>高: {fmt(d?.high)}</p>
-        <p>低: {fmt(d?.low)}</p>
-        <p>收: <span style={{ color: '#d4a849' }}>{fmt(d?.close)}</span></p>
-        <p>量: {vol(d?.volume)}</p>
-      </div>
-    </div>
-  );
-}
-
 function PriceChartCard({ refreshKey }: { refreshKey: number }) {
-  const { data, loading, error, execute } = useApi(() => api.gold());
-  useEffect(() => { execute(); }, [execute, refreshKey]);
+  // ─── State ───
+  const [source, setSource] = useState('intl');
+  const [period, setPeriod] = useState('1y');
+  const [subTab, setSubTab] = useState('spread');
+  const [cache, setCache] = useState<Record<string, GoldPriceResponse>>({});
+  const [indCache, setIndCache] = useState<Record<string, IndicatorsResponse>>({});
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [localRefresh, setLocalRefresh] = useState(0);
 
-  if (loading) return <SectionCard title="行情数据" delay={90}><LoadingSkeleton /></SectionCard>;
-  if (error || !data) return <ErrorCard title="行情数据" error={error || '无数据'} delay={90} onRetry={execute} />;
+  // ─── Refs ───
+  const mainContainerRef = useRef<HTMLDivElement>(null);
+  const subContainerRef = useRef<HTMLDivElement>(null);
 
-  const chartData = data.data.slice(-100);
-  if (!chartData.length) return <SectionCard title="行情数据" delay={90}><p className="muted-copy">无数据</p></SectionCard>;
+  const cacheKey = `${source}_${period}`;
+  const data = cache[cacheKey];
+  const indicators = indCache[cacheKey];
+
+  // ─── Helpers ───
+  const calcMA = useCallback((values: number[], maPeriod: number): (number | null)[] => {
+    const result: (number | null)[] = [];
+    for (let i = 0; i < values.length; i++) {
+      if (i < maPeriod - 1) { result.push(null); continue; }
+      let s = 0;
+      for (let j = i - maPeriod + 1; j <= i; j++) s += values[j];
+      result.push(s / maPeriod);
+    }
+    return result;
+  }, []);
+
+  const computeStats = useCallback((d: GoldPriceResponse) => {
+    const prices = d.data.filter((p): p is OhlcvPoint & { close: number } => p.close != null);
+    if (!prices.length) return null;
+    const latest = prices[prices.length - 1].close;
+    const prev = prices.length > 1 ? prices[prices.length - 2].close : latest;
+    const change = latest - prev;
+    const changePct = prev !== 0 ? (change / prev) * 100 : 0;
+    let high = -Infinity, low = Infinity;
+    for (const p of prices) {
+      if (p.high != null && p.high > high) high = p.high;
+      if (p.low != null && p.low < low) low = p.low;
+    }
+    return { latest, change, changePct, high, low };
+  }, []);
+
+  // ─── Fetch gold data ───
+  useEffect(() => {
+    let cancelled = false;
+    const key = `${source}_${period}`;
+
+    api.gold(source, period)
+      .then(r => { if (!cancelled) { setCache(prev => ({ ...prev, [key]: r })); setLoading(false); } })
+      .catch(e => { if (!cancelled) { setError(e instanceof Error ? e.message : '未知错误'); setLoading(false); } });
+
+    return () => { cancelled = true; };
+  }, [source, period, refreshKey, localRefresh]);
+
+  // ─── Fetch indicators ───
+  useEffect(() => {
+    let cancelled = false;
+    const key = `${source}_${period}`;
+    api.indicators(source, period)
+      .then(r => { if (!cancelled) setIndCache(prev => ({ ...prev, [key]: r })); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [source, period]);
+
+  // ─── Pre-fetch alternate source for spread sub-chart ───
+  useEffect(() => {
+    if (subTab !== 'spread') return;
+    let cancelled = false;
+    const sources = source === 'intl' ? ['shfe'] : source === 'shfe' ? ['intl'] : ['intl', 'shfe'];
+    for (const s of sources) {
+      const k = `${s}_${period}`;
+      if (cache[k]) continue;
+      api.gold(s, period)
+        .then(r => { if (!cancelled) setCache(prev => ({ ...prev, [k]: r })); })
+        .catch(() => {});
+    }
+    return () => { cancelled = true; };
+  }, [subTab, source, period, refreshKey]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ─── Main chart ───
+  useEffect(() => {
+    if (!data || !mainContainerRef.current || loading) return;
+
+    const container = mainContainerRef.current;
+    const fmtDate = (t: unknown) => {
+      const s = String(t);
+      return s.length >= 10 ? s.slice(0, 10) : s;
+    };
+    const chart = createChart(container, {
+      layout: { background: { type: ColorType.Solid, color: 'transparent' }, textColor: '#7f6d5a' },
+      grid: { vertLines: { color: 'rgba(191,166,130,0.15)' }, horzLines: { color: 'rgba(191,166,130,0.15)' } },
+      crosshair: { mode: CrosshairMode.Normal },
+      rightPriceScale: { borderColor: 'rgba(191,166,130,0.3)' },
+      timeScale: {
+        borderColor: 'rgba(191,166,130,0.3)',
+        timeVisible: false,
+        tickMarkFormatter: (t: unknown) => {
+          const s = String(t);
+          return s.length >= 10 ? s.slice(5, 10) : s;
+        },
+      },
+      localization: {
+        timeFormatter: fmtDate,
+        dateFormat: 'yyyy-MM-dd',
+      },
+      width: container.clientWidth,
+      height: 380,
+    });
+
+    const validData = data.data.filter((d): d is OhlcvPoint & { close: number } => d.close != null);
+    if (!validData.length) { chart.remove(); return; }
+
+    const times = validData.map(d => d.date.slice(0, 10));
+    const closes = validData.map(d => d.close);
+
+    // Candlestick series
+    const candle = chart.addSeries(CandlestickSeries, {
+      upColor: '#ef4444', downColor: '#22c55e',
+      borderUpColor: '#ef4444', borderDownColor: '#22c55e',
+      wickUpColor: '#ef4444', wickDownColor: '#22c55e',
+      priceFormat: { type: 'price', precision: 2, minMove: 0.01 },
+    });
+    candle.setData(validData.map(d => ({
+      time: d.date.slice(0, 10),
+      open: d.open ?? d.close,
+      high: d.high ?? d.close,
+      low: d.low ?? d.close,
+      close: d.close,
+    })));
+
+    // Volume histogram
+    const vol = chart.addSeries(HistogramSeries, {
+      priceFormat: { type: 'volume' },
+      priceScaleId: 'vol-scale',
+    });
+    chart.priceScale('vol-scale').applyOptions({
+      scaleMargins: { top: 0.82, bottom: 0 },
+    });
+    vol.setData(validData.map(d => ({
+      time: d.date.slice(0, 10),
+      value: d.volume ?? 0,
+      color: d.close >= (d.open ?? d.close) ? 'rgba(239,68,68,0.3)' : 'rgba(34,197,94,0.3)',
+    })));
+
+    // Moving averages
+    const maColors = [
+      { period: 20, color: '#3b82f6' },
+      { period: 50, color: '#f59e0b' },
+      { period: 200, color: '#8b5cf6' },
+    ];
+    for (const ma of maColors) {
+      const vals = calcMA(closes, ma.period);
+      const maData = vals.map((v, i) => v != null ? { time: times[i], value: v } : null).filter(Boolean);
+      if (maData.length > 0) {
+        const line = chart.addSeries(LineSeries, {
+          color: ma.color, lineWidth: 1, lastValueVisible: false,
+          priceFormat: { type: 'price', precision: 2, minMove: 0.01 },
+        });
+        line.setData(maData as Array<{ time: string; value: number }>);
+      }
+    }
+
+    chart.timeScale().fitContent();
+
+    // Resize observer
+    const observer = new ResizeObserver(entries => {
+      for (const e of entries) chart.applyOptions({ width: e.contentRect.width });
+    });
+    observer.observe(container);
+
+    return () => {
+      observer.disconnect();
+      chart.remove();
+    };
+  }, [data, loading, calcMA]);
+
+  // ─── Sub chart (spread) ───
+  useEffect(() => {
+    // Only render spread chart
+    if (subTab !== 'spread' || !subContainerRef.current) {
+      return;
+    }
+
+    const intlData = source === 'intl' ? data : cache[`intl_${period}`];
+    const shfeData = source === 'shfe' ? data : cache[`shfe_${period}`];
+
+    if (!intlData || !intlData.data.length) return;
+
+    const container = subContainerRef.current;
+    const chart = createChart(container, {
+      layout: { background: { type: ColorType.Solid, color: 'transparent' }, textColor: '#7f6d5a' },
+      grid: { vertLines: { color: 'rgba(191,166,130,0.15)' }, horzLines: { color: 'rgba(191,166,130,0.15)' } },
+      rightPriceScale: { borderColor: 'rgba(191,166,130,0.3)' },
+      timeScale: {
+        borderColor: 'rgba(191,166,130,0.3)',
+        tickMarkFormatter: (t: unknown) => {
+          const s = String(t);
+          return s.length >= 10 ? s.slice(5, 10) : s;
+        },
+      },
+      localization: {
+        timeFormatter: (t: unknown) => {
+          const s = String(t);
+          return s.length >= 10 ? s.slice(0, 10) : s;
+        },
+        dateFormat: 'yyyy-MM-dd',
+      },
+      width: container.clientWidth,
+      height: 180,
+    });
+
+    const intlLine = chart.addSeries(LineSeries, {
+      color: '#3b82f6', lineWidth: 2, lastValueVisible: true,
+      priceFormat: { type: 'price', precision: 2, minMove: 0.01 },
+    });
+    intlLine.setData(
+      intlData.data
+        .filter((d): d is OhlcvPoint & { close: number } => d.close != null)
+        .map(d => ({ time: d.date.slice(0, 10), value: d.close }))
+    );
+
+    if (shfeData && shfeData.data.length > 0) {
+      const shfeLine = chart.addSeries(LineSeries, {
+        color: '#f59e0b', lineWidth: 2, lastValueVisible: true,
+        priceFormat: { type: 'price', precision: 2, minMove: 0.01 },
+      });
+      shfeLine.setData(
+        shfeData.data
+          .filter((d): d is OhlcvPoint & { close: number } => d.close != null)
+          .map(d => ({ time: d.date.slice(0, 10), value: d.close }))
+      );
+    }
+
+    chart.timeScale().fitContent();
+
+    const observer = new ResizeObserver(entries => {
+      for (const e of entries) chart.applyOptions({ width: e.contentRect.width });
+    });
+    observer.observe(container);
+
+    return () => {
+      observer.disconnect();
+      chart.remove();
+    };
+  }, [subTab, data, cache, source, period]);
+
+  // ─── Decide what to show ───
+  const stats = useMemo(() => data ? computeStats(data) : null, [data, computeStats]);
+
+  if (loading && !data) {
+    return <SectionCard title="行情数据" delay={90} className="md:col-span-2 xl:col-span-3"><LoadingSkeleton /></SectionCard>;
+  }
+  if (error && !data) {
+    return (
+      <ErrorCard title="行情数据" error={error} delay={90} onRetry={() => {
+        const key = `${source}_${period}`;
+        setLoading(true);
+        setError(null);
+        api.gold(source, period)
+          .then(r => { setCache(prev => ({ ...prev, [key]: r })); setLoading(false); })
+          .catch(e => { setError(e instanceof Error ? e.message : '未知错误'); setLoading(false); });
+      }} className="md:col-span-2 xl:col-span-3" />
+    );
+  }
+  if (!data || !data.data.length) {
+    return <SectionCard title="行情数据" delay={90} className="md:col-span-2 xl:col-span-3"><p className="muted-copy">无数据</p></SectionCard>;
+  }
 
   return (
-    <SectionCard title="行情数据" delay={90}>
-      {data.latest_price != null && (
-        <p className="metric-value text-[var(--accent)] mb-2">{data.latest_price.toFixed(2)}</p>
-      )}
-      <div className="flex flex-wrap gap-2 mb-3">
-        <span className="data-pill">源: {data.source}</span>
-        <span className="data-pill">记录: {data.records}</span>
+    <SectionCard title="行情数据" delay={90} className="md:col-span-2 xl:col-span-3">
+      {/* Refresh button */}
+      <div className="flex items-center justify-end gap-2 -mt-2 mb-1">
+        {loading && data && (
+          <span className="flex items-center gap-1 text-xs muted-copy">
+            <span className="inline-block w-2 h-2 border border-[var(--accent)] border-t-transparent rounded-full animate-spin" />
+            刷新中
+          </span>
+        )}
+        <button
+          onClick={() => { setLoading(true); setError(null); setLocalRefresh(k => k + 1); }}
+          className="data-pill cursor-pointer text-xs hover:border-[var(--accent)] transition-colors"
+        >
+          刷新
+        </button>
       </div>
-      <ResponsiveContainer width="100%" height={280}>
-        <ComposedChart data={chartData}>
-          <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
-          <XAxis dataKey="date" tick={{ fontSize: 12 }} stroke="var(--muted)" tickFormatter={(v: string) => v.slice(0, 10)} />
-          <YAxis yAxisId="price" stroke="var(--muted)" tick={{ fontSize: 12 }} />
-          <YAxis yAxisId="volume" orientation="right" hide />
-          <Tooltip content={<ChartTooltip />} />
-          <Bar yAxisId="volume" dataKey="volume" fill="rgba(128,128,128,0.3)" barSize={4} />
-          <Line yAxisId="price" type="monotone" dataKey="close" stroke="#d4a849" dot={false} strokeWidth={2} />
-        </ComposedChart>
-      </ResponsiveContainer>
+      {/* Toolbar */}
+      <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+        <div className="flex gap-1.5 flex-wrap">
+          {[['intl', '国际'], ['gld', 'GLD'], ['shfe', '沪金']].map(([val, label]) => (
+            <button
+              key={val}
+              onClick={() => { if (source !== val) { setSource(val); setLoading(true); } }}
+              className={`data-pill cursor-pointer transition-colors text-xs ${source === val ? 'border-[var(--accent)] text-[var(--accent)]' : ''}`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+        <div className="flex gap-1.5 flex-wrap">
+          {[['1mo', '1月'], ['3mo', '3月'], ['6mo', '6月'], ['1y', '1年'], ['5y', '5年']].map(([val, label]) => (
+            <button
+              key={val}
+              onClick={() => { if (period !== val) { setPeriod(val); setLoading(true); } }}
+              className={`data-pill cursor-pointer transition-colors text-xs ${period === val ? 'border-[var(--accent)] text-[var(--accent)]' : ''}`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Stats */}
+      {stats && (
+        <div className="flex flex-wrap items-baseline gap-3 mb-3">
+          <span className="metric-value text-[var(--accent)]">{stats.latest.toFixed(2)}</span>
+          <span className={`text-sm font-medium ${stats.change >= 0 ? 'text-[#ef4444]' : 'text-[#22c55e]'}`}>
+            {stats.change >= 0 ? '+' : ''}{stats.change.toFixed(2)} ({stats.changePct >= 0 ? '+' : ''}{stats.changePct.toFixed(2)}%)
+          </span>
+          <span className="text-xs muted-copy">高: {stats.high.toFixed(2)} / 低: {stats.low.toFixed(2)}</span>
+          <span className="text-xs muted-copy">{data.records} 条记录</span>
+        </div>
+      )}
+
+      {/* Main chart */}
+      <div ref={mainContainerRef} className="w-full" style={{ height: 380 }} />
+
+      {/* Sub chart */}
+      <div className="mt-4">
+        <div className="flex gap-1.5 mb-2 flex-wrap items-center">
+          {[['spread', '价差'], ['rsi', 'RSI'], ['macd', 'MACD'], ['bb', '布林带']].map(([val, label]) => (
+            <div key={val} className="flex items-center gap-1">
+              <button
+                onClick={() => setSubTab(val)}
+                className={`data-pill cursor-pointer transition-colors text-xs ${subTab === val ? 'border-[var(--accent)] text-[var(--accent)]' : ''}`}
+              >
+                {label}
+              </button>
+              <span className="relative group">
+                <span className="inline-flex items-center justify-center w-3.5 h-3.5 rounded-full border border-[var(--muted)] text-[10px] cursor-help text-[var(--muted)] leading-none">?</span>
+                <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 rounded-lg text-xs whitespace-nowrap bg-[var(--foreground)] text-[var(--background)] opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-50 shadow-lg">
+                  {SUB_TAB_HELP[val]}
+                </span>
+              </span>
+            </div>
+          ))}
+        </div>
+        <div className="w-full min-h-[180px]">
+          {subTab === 'spread' && (
+            <div ref={subContainerRef} className="w-full" style={{ height: 180 }} />
+          )}
+          {subTab === 'rsi' && <RsiGauge ind={indicators?.indicators ?? {}} />}
+          {subTab === 'macd' && <MacdGauge ind={indicators?.indicators ?? {}} />}
+          {subTab === 'bb' && <BbGauge ind={indicators?.indicators ?? {}} price={stats?.latest ?? 0} />}
+        </div>
+        {/* Raw indicator summary */}
+        {indicators?.summary && (
+          <details className="mt-3">
+            <summary className="text-sm cursor-pointer muted-copy hover:text-[var(--accent)]">查看详情</summary>
+            <pre className="mt-2 text-xs whitespace-pre-wrap text-[var(--muted)] leading-6">{indicators.summary}</pre>
+          </details>
+        )}
+      </div>
     </SectionCard>
   );
 }
@@ -253,8 +570,9 @@ function SignalGaugeCard({ refreshKey }: { refreshKey: number }) {
   const { data, loading, error, execute } = useApi(() => api.signal());
   useEffect(() => { execute(); }, [execute, refreshKey]);
 
-  if (loading) return <SectionCard title="交易信号" delay={130}><LoadingSkeleton /></SectionCard>;
-  if (error || !data) return <ErrorCard title="交易信号" error={error || '无数据'} delay={130} onRetry={execute} />;
+  if (loading && !data) return <SectionCard title="交易信号" delay={130}><LoadingSkeleton /></SectionCard>;
+  if (error && !data) return <ErrorCard title="交易信号" error={error || '无数据'} delay={130} onRetry={execute} />;
+  if (!data) return <SectionCard title="交易信号" delay={130}><LoadingSkeleton /></SectionCard>;
 
   const sig = data.signal;
   const tone = signalTone(sig.signal);
@@ -262,6 +580,12 @@ function SignalGaugeCard({ refreshKey }: { refreshKey: number }) {
 
   return (
     <SectionCard title="交易信号" delay={130}>
+      {loading && (
+        <div className="flex items-center gap-1.5 -mt-1 mb-2">
+          <span className="inline-block w-3 h-3 border border-[var(--accent)] border-t-transparent rounded-full animate-spin" />
+          <span className="text-xs muted-copy">刷新中</span>
+        </div>
+      )}
       <p className="text-2xl font-display mb-2" style={{ color: tone }}>{signalLabel(sig.signal)}</p>
 
       {/* Score gauge bar */}
@@ -364,7 +688,7 @@ function MacdGauge({ ind }: { ind: Record<string, number> }) {
 
 function BbGauge({ ind, price }: { ind: Record<string, number>; price: number }) {
   const upper = ind.bb_upper;
-  const middle = ind.bb_middle;
+  const middle = ind.bb_mid;
   const lower = ind.bb_lower;
   if (upper == null || middle == null || lower == null) return <p className="muted-copy">布林带数据不可用</p>;
   const range = upper - lower;
@@ -399,46 +723,6 @@ function BbGauge({ ind, price }: { ind: Record<string, number>; price: number })
   );
 }
 
-function IndicatorGaugeCard({ refreshKey }: { refreshKey: number }) {
-  const { data, loading, error, execute } = useApi(() => api.indicators());
-  useEffect(() => { execute(); }, [execute, refreshKey]);
-  const [tab, setTab] = useState('rsi');
-
-  if (loading) return <SectionCard title="技术指标" delay={170}><LoadingSkeleton /></SectionCard>;
-  if (error || !data) return <ErrorCard title="技术指标" error={error || '无数据'} delay={170} onRetry={execute} />;
-
-  const ind = data.indicators;
-
-  return (
-    <SectionCard title="技术指标" delay={170}>
-      <p className="metric-value text-[var(--accent)] mb-2">{data.price.toFixed(2)}</p>
-
-      <div className="flex gap-2 mb-3">
-        {['rsi', 'macd', 'bb'].map(t => (
-          <button
-            key={t}
-            onClick={() => setTab(t)}
-            className={`data-pill cursor-pointer transition-colors ${tab === t ? 'border-[var(--accent)] text-[var(--accent)]' : ''}`}
-          >
-            {t === 'rsi' ? 'RSI' : t === 'macd' ? 'MACD' : '布林带'}
-          </button>
-        ))}
-      </div>
-
-      {tab === 'rsi' && <RsiGauge ind={ind} />}
-      {tab === 'macd' && <MacdGauge ind={ind} />}
-      {tab === 'bb' && <BbGauge ind={ind} price={data.price} />}
-
-      {data.summary && (
-        <details className="mt-3">
-          <summary className="text-sm cursor-pointer muted-copy hover:text-[var(--accent)]">查看详情</summary>
-          <pre className="mt-2 text-xs whitespace-pre-wrap text-[var(--muted)] leading-6">{data.summary}</pre>
-        </details>
-      )}
-    </SectionCard>
-  );
-}
-
 function PredictionChartCard({ refreshKey }: { refreshKey: number }) {
   const { data, loading, error, execute } = useApi(() => api.prediction());
   useEffect(() => { execute(); }, [execute, refreshKey]);
@@ -446,17 +730,22 @@ function PredictionChartCard({ refreshKey }: { refreshKey: number }) {
   if (loading) return <SectionCard title="价格预测" delay={210}><LoadingSkeleton /></SectionCard>;
   if (error || !data) return <ErrorCard title="价格预测" error={error || '无数据'} delay={210} onRetry={execute} />;
 
-  const chartData = data.prediction;
-  if (!chartData.length) return <SectionCard title="价格预测" delay={210}><p className="muted-copy">无数据</p></SectionCard>;
+  if (!data.prediction.length) return <SectionCard title="价格预测" delay={210}><p className="muted-copy">无数据</p></SectionCard>;
+
+  const combined = [
+    ...(data.history || []).map(h => ({ ...h, yhat: null as number | null, yhat_lower: null as number | null, yhat_upper: null as number | null })),
+    ...data.prediction.map(p => ({ ...p, close: null as number | null })),
+  ];
 
   return (
-    <SectionCard title="价格预测" delay={210}>
+    <SectionCard title={<span className="flex items-center gap-1.5">价格预测<span className="relative group"><span className="inline-flex items-center justify-center w-3.5 h-3.5 rounded-full border border-[var(--muted)] text-[10px] cursor-help text-[var(--muted)] leading-none">?</span><span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 rounded-lg text-xs whitespace-nowrap bg-[var(--foreground)] text-[var(--background)] opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-50 shadow-lg">{PREDICTION_HELP}</span></span></span>} delay={210}>
       <div className="flex items-center gap-3 mb-3">
         <span className="data-pill">趋势: {data.trend === 'up' ? '↑ 上涨' : data.trend === 'down' ? '↓ 下跌' : '→ 震荡'}</span>
-        <span className="data-pill">预测项: {data.prediction.length}</span>
+        <span className="data-pill">预测: {data.prediction.length}天</span>
+        <span className="data-pill">历史: {data.history?.length || 0}天</span>
       </div>
       <ResponsiveContainer width="100%" height={280}>
-        <AreaChart data={chartData}>
+        <AreaChart data={combined}>
           <defs>
             <linearGradient id="bandGrad" x1="0" y1="0" x2="0" y2="1">
               <stop offset="5%" stopColor="#d4a849" stopOpacity={0.15} />
@@ -465,20 +754,22 @@ function PredictionChartCard({ refreshKey }: { refreshKey: number }) {
           </defs>
           <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
           <XAxis dataKey="ds" tick={{ fontSize: 12 }} stroke="var(--muted)" />
-          <YAxis stroke="var(--muted)" tick={{ fontSize: 12 }} />
+          <YAxis stroke="var(--muted)" tick={{ fontSize: 12 }} domain={['auto', 'auto']} />
           <Tooltip
             contentStyle={{ background: 'var(--surface-strong)', border: '1px solid var(--border)', borderRadius: 8, fontSize: 13 }}
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             formatter={(value: any, name: any) => {
-              const labels: Record<string, string> = { yhat: '预测值', yhat_lower: '下限', yhat_upper: '上限' };
+              const labels: Record<string, string> = { close: '收盘价', yhat: '预测值', yhat_lower: '下限', yhat_upper: '上限' };
+              if (value === null) return [null];
               return [Number(value).toFixed(2), labels[name] || name];
             }}
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             labelFormatter={(label: any) => `日期: ${label}`}
           />
-          <Area type="monotone" dataKey="yhat_upper" fill="url(#bandGrad)" stroke="none" />
-          <Area type="monotone" dataKey="yhat_lower" fill="var(--surface-strong)" stroke="none" />
-          <Line type="monotone" dataKey="yhat" stroke="#d4a849" strokeWidth={2} dot={false} />
+          <Area type="monotone" dataKey="yhat_upper" fill="url(#bandGrad)" stroke="none" connectNulls={false} />
+          <Area type="monotone" dataKey="yhat_lower" fill="var(--surface-strong)" stroke="none" connectNulls={false} />
+          <Line type="monotone" dataKey="yhat" stroke="#d4a849" strokeWidth={2} dot={false} connectNulls={false} />
+          <Line type="monotone" dataKey="close" stroke="#4a9eff" strokeWidth={1.5} dot={false} connectNulls={false} />
         </AreaChart>
       </ResponsiveContainer>
       {data.summary && (
@@ -551,7 +842,11 @@ function NewsCard({ refreshKey }: { refreshKey: number }) {
         {data.news.map((item, i) => (
           <div key={i} className="p-3 rounded-xl border border-[var(--border)] text-sm">
             <div className="flex items-start justify-between gap-2">
-              <span className="flex-1">{item.title}</span>
+              <span className="flex-1">
+                {item.link ? (
+                  <a href={item.link} target="_blank" rel="noopener noreferrer" className="inline-link">{item.title}</a>
+                ) : item.title}
+              </span>
               <span
                 className="text-xs whitespace-nowrap px-2 py-0.5 rounded-full"
                 style={{
@@ -922,23 +1217,127 @@ function CalendarCard({ refreshKey }: { refreshKey: number }) {
 
 /* ─── Page ─── */
 
+const SUB_TAB_HELP: Record<string, string> = {
+  spread: '国际金价(蓝)与沪金(橙)走势对比，观察国内外价差',
+  rsi: '相对强弱指标(RSI): >70 超买(可能回调), <30 超卖(可能反弹)',
+  macd: '指数平滑异同平均线: 快线上穿信号线为买入信号，下穿为卖出信号',
+  bb: '布林带: 价格触及上轨可能超买，触及下轨可能超卖; 带宽收窄预示变盘',
+};
+
+const PREDICTION_HELP =
+  '基于 Prophet 模型的时序预测: 蓝线为历史收盘价，金线为预测中值，金色阴影为 95% 置信区间。预测仅作为趋势参考，不构成投资建议。';
+
+const REFRESH_OPTIONS = [
+  { label: '关闭', value: 0 },
+  { label: '30s', value: 30_000 },
+  { label: '60s', value: 60_000 },
+  { label: '120s', value: 120_000 },
+];
+
+const SECTIONS = [
+  { key: 'market', label: '行情概览' },
+  { key: 'macro', label: '宏观数据' },
+  { key: 'extra', label: '补充数据' },
+  { key: 'tools', label: '工具' },
+] as const;
+
+type SectionKey = typeof SECTIONS[number]['key'];
+
+const VISIBLE_KEY = 'dash_visible_cards';
+
+function loadVisible(): Record<string, boolean> {
+  if (typeof window === 'undefined') return {};
+  try {
+    return JSON.parse(localStorage.getItem(VISIBLE_KEY) || '{}');
+  } catch { return {}; }
+}
+
+function TopMetricsBar({ refreshKey }: { refreshKey: number }) {
+  const { data: goldData, execute: fetchGold } = useApi(() => api.gold());
+  const { data: signalData, execute: fetchSignal } = useApi(() => api.signal());
+  useEffect(() => { fetchGold(); }, [fetchGold, refreshKey]);
+  useEffect(() => { fetchSignal(); }, [fetchSignal, refreshKey]);
+
+  const sig = signalData?.signal;
+  const tone = sig ? signalTone(sig.signal) : undefined;
+
+  return (
+    <div className="flex flex-wrap items-center gap-4 px-5 py-3 rounded-xl bg-[var(--surface-strong)] border border-[var(--border)] mb-4">
+      <div className="flex items-baseline gap-2">
+        <span className="text-xs muted-copy">金价</span>
+        <span className="metric-value text-[var(--accent)]">{goldData?.latest_price?.toFixed(2) ?? '--'}</span>
+      </div>
+      {sig && (
+        <>
+          <div className="w-px h-6 bg-[var(--border)]" />
+          <div className="flex items-baseline gap-2">
+            <span className="text-xs muted-copy">信号</span>
+            <span className="font-medium" style={{ color: tone }}>{signalLabel(sig.signal)}</span>
+          </div>
+          <div className="flex items-baseline gap-2">
+            <span className="text-xs muted-copy">评分</span>
+            <span className="text-sm">{sig.score}</span>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 export default function DashboardPage() {
   const [refreshKey, setRefreshKey] = useState(0);
   const [lastRefresh, setLastRefresh] = useState('--');
+  const [autoInterval, setAutoInterval] = useState(60_000);
+  const [section, setSection] = useState<SectionKey>('market');
+  const [visible, setVisible] = useState<Record<string, boolean>>(loadVisible);
+  const [showCustomize, setShowCustomize] = useState(false);
+  const autoTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  const refresh = () => {
+  const refresh = useCallback(() => {
     setRefreshKey(k => k + 1);
     setLastRefresh(new Date().toLocaleTimeString());
-  };
+  }, []);
 
-  useWebSocket('dashboard', ['price', 'signal', 'news'], (channel) => {
+  // Auto-refresh timer
+  useEffect(() => {
+    if (autoInterval <= 0) return;
+    const timer = setInterval(refresh, autoInterval);
+    autoTimerRef.current = timer;
+    return () => clearInterval(timer);
+  }, [autoInterval, refresh]);
+
+  // Pause auto-refresh when page is hidden
+  useEffect(() => {
+    const handleVisibility = () => {
+      if (document.hidden && autoTimerRef.current) {
+        clearInterval(autoTimerRef.current);
+        autoTimerRef.current = null;
+      } else if (!document.hidden && autoInterval > 0 && !autoTimerRef.current) {
+        autoTimerRef.current = setInterval(refresh, autoInterval);
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibility);
+    return () => document.removeEventListener('visibilitychange', handleVisibility);
+  }, [autoInterval, refresh]);
+
+  useWebSocket('dashboard', ['price', 'signal', 'news'], () => {
     refresh();
   });
+
+  const toggleVisible = (key: string) => {
+    setVisible(prev => {
+      const next = { ...prev, [key]: !(prev[key] ?? true) };
+      try { localStorage.setItem(VISIBLE_KEY, JSON.stringify(next)); } catch { /* ignore */ }
+      return next;
+    });
+  };
+
+  const isVis = (key: string) => visible[key] ?? true;
 
   return (
     <main className="min-h-screen">
       <div className="dashboard-shell">
-        <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
+        <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
           <div>
             <p className="eyebrow">数据面板</p>
             <p className="text-sm muted-copy mt-1">
@@ -948,7 +1347,28 @@ export default function DashboardPage() {
             </p>
           </div>
           <div className="flex items-center gap-3">
+            {autoInterval > 0 && (
+              <span className="flex items-center gap-1.5 text-xs muted-copy">
+                <span className="inline-block w-2 h-2 rounded-full bg-[var(--accent)] animate-pulse" />
+                自动 {autoInterval / 1000}s
+              </span>
+            )}
             <span className="text-xs muted-copy">最后刷新: {lastRefresh}</span>
+            <select
+              value={autoInterval}
+              onChange={e => setAutoInterval(Number(e.target.value))}
+              className="data-pill bg-transparent cursor-pointer text-xs"
+            >
+              {REFRESH_OPTIONS.map(opt => (
+                <option key={opt.value} value={opt.value}>{opt.label}</option>
+              ))}
+            </select>
+            <button
+              onClick={() => setShowCustomize(!showCustomize)}
+              className="data-pill cursor-pointer text-xs hover:border-[var(--accent)] transition-colors"
+            >
+              定制
+            </button>
             <button
               onClick={refresh}
               className="data-pill cursor-pointer hover:border-[var(--accent)] transition-colors"
@@ -958,42 +1378,99 @@ export default function DashboardPage() {
           </div>
         </div>
 
+        {/* Section tabs */}
+        <div className="flex gap-1.5 mb-4 flex-wrap">
+          {SECTIONS.map(s => (
+            <button
+              key={s.key}
+              onClick={() => setSection(s.key)}
+              className={`data-pill cursor-pointer transition-colors ${section === s.key ? 'border-[var(--accent)] text-[var(--accent)]' : ''}`}
+            >
+              {s.label}
+            </button>
+          ))}
+        </div>
+
+        {/* Customize panel */}
+        {showCustomize && (
+          <div className="flex flex-wrap gap-2 mb-4 p-3 rounded-xl border border-[var(--border)] bg-[var(--surface-strong)]">
+            {['系统状态', '行情图', '交易信号', '价格预测', '宏观数据', '新闻情绪', '央行黄金储备', 'COT 持仓', 'ETF 流量', '地缘政治风险', 'FedWatch', '中国宏观', 'AISC', '财经日历', '辩论引擎', '回测'].map(label => {
+              const key = label;
+              return (
+                <button
+                  key={key}
+                  onClick={() => toggleVisible(key)}
+                  className={`data-pill cursor-pointer text-xs transition-colors ${isVis(key) ? 'border-[var(--accent)]' : 'opacity-40'}`}
+                >
+                  {isVis(key) ? '✓ ' : ''}{label}
+                </button>
+              );
+            })}
+          </div>
+        )}
+
+        {/* Top metrics bar */}
+        <TopMetricsBar refreshKey={refreshKey} />
+
+        {/* Cards grid */}
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+          {/* System status: always visible */}
           <div className="md:col-span-2 xl:col-span-3">
             <SystemStatusCard refreshKey={refreshKey} />
           </div>
 
-          <PriceChartCard refreshKey={refreshKey} />
-          <SignalGaugeCard refreshKey={refreshKey} />
-          <NewsCard refreshKey={refreshKey} />
+          {/* ── 行情概览 ── */}
+          {section === 'market' && (
+            <>
+              {isVis('行情图') && <PriceChartCard refreshKey={refreshKey} />}
+              {(isVis('交易信号') || isVis('新闻情绪')) && (
+                <div className="md:col-span-2 xl:col-span-3 flex gap-4">
+                  <div className="flex-1 min-w-0">{isVis('交易信号') && <SignalGaugeCard refreshKey={refreshKey} />}</div>
+                  <div className="flex-1 min-w-0">{isVis('新闻情绪') && <NewsCard refreshKey={refreshKey} />}</div>
+                </div>
+              )}
+              {/* 技术指标已集成在行情图子图中（RSI/MACD/布林带） */}
+              {isVis('价格预测') && (
+                <div className="md:col-span-2 xl:col-span-3">
+                  <PredictionChartCard refreshKey={refreshKey} />
+                </div>
+              )}
+            </>
+          )}
 
-          <div className="md:col-span-2">
-            <IndicatorGaugeCard refreshKey={refreshKey} />
-          </div>
-          <MacroCard refreshKey={refreshKey} />
+          {/* ── 宏观数据 ── */}
+          {section === 'macro' && (
+            <>
+              {isVis('宏观数据') && <MacroCard refreshKey={refreshKey} />}
+              {isVis('FedWatch') && <FedWatchCard refreshKey={refreshKey} />}
+              {isVis('中国宏观') && <ChinaMacroCard refreshKey={refreshKey} />}
+              {isVis('新闻情绪') && <NewsCard refreshKey={refreshKey} />}
+            </>
+          )}
 
-          <div className="md:col-span-2">
-            <PredictionChartCard refreshKey={refreshKey} />
-          </div>
-          <BacktestCard refreshKey={refreshKey} />
+          {/* ── 补充数据 ── */}
+          {section === 'extra' && (
+            <>
+              {isVis('央行黄金储备') && <CentralBankCard refreshKey={refreshKey} />}
+              {isVis('COT 持仓') && <CotCard refreshKey={refreshKey} />}
+              {isVis('ETF 流量') && <EtfFlowCard refreshKey={refreshKey} />}
+              {isVis('地缘政治风险') && <GeopolCard refreshKey={refreshKey} />}
+              {isVis('AISC') && <AiscCard refreshKey={refreshKey} />}
+              {isVis('财经日历') && <CalendarCard refreshKey={refreshKey} />}
+            </>
+          )}
 
-          <div className="md:col-span-2 xl:col-span-3">
-            <DebateCard />
-          </div>
-
-          {/* ── 补充数据卡片 ── */}
-          <div className="md:col-span-2 xl:col-span-3">
-            <h3 className="section-title !text-sm mb-2">补充数据</h3>
-          </div>
-
-          <CentralBankCard refreshKey={refreshKey} />
-          <CotCard refreshKey={refreshKey} />
-          <EtfFlowCard refreshKey={refreshKey} />
-          <GeopolCard refreshKey={refreshKey} />
-          <FedWatchCard refreshKey={refreshKey} />
-          <ChinaMacroCard refreshKey={refreshKey} />
-          <AiscCard refreshKey={refreshKey} />
-          <CalendarCard refreshKey={refreshKey} />
+          {/* ── 工具 ── */}
+          {section === 'tools' && (
+            <>
+              {isVis('辩论引擎') && (
+                <div className="md:col-span-2 xl:col-span-3">
+                  <DebateCard />
+                </div>
+              )}
+              {isVis('回测') && <BacktestCard refreshKey={refreshKey} />}
+            </>
+          )}
         </div>
       </div>
     </main>

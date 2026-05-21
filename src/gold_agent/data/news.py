@@ -11,7 +11,8 @@ logger = logging.getLogger(__name__)
 # 黄金相关 RSS 源
 RSS_FEEDS = {
     "google_news": "https://news.google.com/rss/search?q=gold+price&hl=en-US&gl=US&ceid=US:en",
-    "reuters_gold": "https://news.google.com/rss/search?q=site:reuters.com+gold&hl=en-US",
+    "google_news_cn": "https://news.google.com/rss/search?q=黄金+价格&hl=zh-CN&gl=CN&ceid=CN:zh-Hans",
+    "google_reuters": "https://news.google.com/rss/search?q=site:reuters.com+gold&hl=en-US",
     "mining_com": "https://www.mining.com/feed",
 }
 
@@ -20,12 +21,14 @@ BULLISH_KEYWORDS = [
     "rally", "surge", "record high", "safe haven", "inflation hedge",
     "central bank buying", "rate cut", "dollar weak", "geopolitical",
     "央行购金", "创新高", "避险", "降息", "美元走弱",
+    "金价上涨", "大涨", "看涨", "利多", "反弹", "走高",
 ]
 
 BEARISH_KEYWORDS = [
     "selloff", "plunge", "rate hike", "dollar strong", "risk-on",
     "yield surge", "hawkish", "tightening", "deflation",
     "加息", "暴跌", "美元走强", "风险偏好", "鹰派",
+    "金价下跌", "大跌", "看跌", "利空", "回落", "走低",
 ]
 
 

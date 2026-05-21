@@ -41,8 +41,14 @@ export interface PredictionPoint {
   yhat_upper: number;
 }
 
+export interface HistoryPoint {
+  ds: string;
+  close: number;
+}
+
 export interface PredictionResponse {
   prediction: PredictionPoint[];
+  history: HistoryPoint[];
   trend: string;
   summary: string;
 }

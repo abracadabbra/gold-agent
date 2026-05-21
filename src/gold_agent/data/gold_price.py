@@ -72,20 +72,19 @@ def fetch_gold_spot_akshare(days: int = 365) -> pd.DataFrame:
     import akshare as ak
 
     try:
-        df = ak.spot_golden_benchmark_sge(
-            start_date=(datetime.now() - timedelta(days=days)).strftime("%Y%m%d"),
-            end_date=datetime.now().strftime("%Y%m%d"),
-        )
+        df = ak.spot_hist_sge(symbol="Au99.99")
         df = df.rename(columns={
-            "日期": "date",
-            "开盘价": "open",
-            "最高价": "high",
-            "最低价": "low",
-            "收盘价": "close",
-            "成交量": "volume",
+            "date": "date",
+            "open": "open",
+            "high": "high",
+            "low": "low",
+            "close": "close",
         })
+        df["volume"] = None
         df["date"] = pd.to_datetime(df["date"])
         df = df.sort_values("date").reset_index(drop=True)
+        cutoff = datetime.now() - timedelta(days=days)
+        df = df[df["date"] >= cutoff].reset_index(drop=True)
         logger.info(f"[akshare] 沪金现货: {len(df)} 条记录")
         return df
     except Exception as e:
