@@ -274,3 +274,36 @@ Fix 6 pre-existing test failures, add GitHub Actions CI, replace loguru with std
 ### Next Steps
 
 - None - task complete
+
+
+## Session 9: Phase B 数据增强
+
+**Date**: 2026-05-21
+**Task**: Phase B 数据增强
+**Branch**: `master`
+
+### Summary
+
+Add GC=F gold to macro yfinance tickers, frontend useWebSocket hook with auto-reconnect, dashboard auto-refresh on WS push
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `ed69632` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
