@@ -1,0 +1,30 @@
+{
+  "id": "market-data-display",
+  "name": "market-data-display",
+  "title": "行情数据展示优化",
+  "description": "",
+  "status": "planning",
+  "dev_type": null,
+  "scope": null,
+  "package": null,
+  "priority": "P2",
+  "creator": "shentao",
+  "assignee": "shentao",
+  "createdAt": "2026-05-21",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "master",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [
+    "05-21-chart-refactor",
+    "05-21-loading-optimization",
+    "05-21-layout-optimization"
+  ],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {}
+}

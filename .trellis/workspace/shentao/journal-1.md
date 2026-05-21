@@ -340,3 +340,36 @@ Landing page: use client + live signal/quick API; integration tests: macro/news/
 ### Next Steps
 
 - None - task complete
+
+
+## Session 11: Dashboard market data display overhaul
+
+**Date**: 2026-05-21
+**Task**: Dashboard market data display overhaul
+**Branch**: `master`
+
+### Summary
+
+Replaced Recharts chart with lightweight-charts K-line with MA overlays/volume hist/crosshair. Added sub-charts (spread/RSI/MACD/BB) with ? tooltips. Removed duplicate IndicatorGaugeCard. Added auto-refresh timer + visibility pause + card-level refresh + load-with-old-data. 4-zone Tab layout + cards customize. Top metrics bar. Clickable news links. Prediction chart: historical context + Prophet explanation. Fixes: SHFE akshare API, bb_mid field, prediction field mapping. Renamed reuters_gold→google_reuters, added Chinese RSS + sentiment.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `be502b4` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
