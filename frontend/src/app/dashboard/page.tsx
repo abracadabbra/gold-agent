@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import Link from 'next/link';
-import { api } from '@/lib/api';
+import { api, useWebSocket } from '@/lib/api';
 import type { DebateResponse, BacktestResult, CalendarResponse } from '@/lib/types';
 import {
   ComposedChart, Line, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
@@ -930,6 +930,10 @@ export default function DashboardPage() {
     setRefreshKey(k => k + 1);
     setLastRefresh(new Date().toLocaleTimeString());
   };
+
+  useWebSocket('dashboard', ['price', 'signal', 'news'], (channel) => {
+    refresh();
+  });
 
   return (
     <main className="min-h-screen">

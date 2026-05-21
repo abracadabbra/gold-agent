@@ -15,7 +15,11 @@ import type {
   CalendarResponse,
 } from './types';
 
+import { useEffect, useRef } from 'react';
+
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE || 'http://localhost:8000';
+
+const WS_BASE = API_BASE.replace(/^http/, 'ws');
 
 async function fetchJson<T>(path: string, options?: RequestInit): Promise<T> {
   const url = `${API_BASE}${path}`;
@@ -71,3 +75,48 @@ export const api = {
   calendar: (days = 60) =>
     fetchJson<CalendarResponse>(`/api/analysis/calendar?days=${days}`),
 };
+
+export function useWebSocket(
+  clientId: string,
+  channels: string[],
+  onMessage: (channel: string, data: unknown) => void,
+) {
+  const wsRef = useRef<WebSocket | null>(null);
+
+  useEffect(() => {
+    const url = `${WS_BASE}/ws/${clientId}`;
+    const ws = new WebSocket(url);
+    let reconnectTimer: ReturnType<typeof setTimeout>;
+
+    ws.onopen = () => {
+      for (const ch of channels) {
+        ws.send(JSON.stringify({ type: 'subscribe', channel: ch }));
+      }
+    };
+
+    ws.onmessage = (event) => {
+      try {
+        const msg = JSON.parse(event.data);
+        if (msg.channel) {
+          onMessage(msg.channel, msg.data);
+        }
+      } catch { /* ignore */ }
+    };
+
+    ws.onclose = () => {
+      reconnectTimer = setTimeout(() => {
+        wsRef.current = null;
+      }, 5000);
+    };
+
+    wsRef.current = ws;
+
+    return () => {
+      clearTimeout(reconnectTimer);
+      ws.close();
+      wsRef.current = null;
+    };
+  }, [clientId, ...channels]);
+
+  return wsRef;
+}

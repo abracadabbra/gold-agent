@@ -19,6 +19,7 @@ _MACRO_TICKERS = {
     "vix": ("^VIX", "VIX 恐慌指数"),
     "sp500": ("^GSPC", "标普500"),
     "crude_oil": ("CL=F", "WTI 原油"),
+    "gold": ("GC=F", "黄金价格"),
 }
 
 
