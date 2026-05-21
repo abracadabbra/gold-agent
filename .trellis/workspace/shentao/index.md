@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 7
+- **Total Sessions**: 8
 - **Last Active**: 2026-05-21
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~243 | Active |
+| `journal-1.md` | ~276 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 8 | 2026-05-21 | Phase A 基础设施完善 | `49a8868` | `master` |
 | 7 | 2026-05-21 | 项目技术方案 | `fd9c1e8` | `master` |
 | 6 | 2026-05-20 | 财务日历 + 数据源修复 + 中央储备重构 | `48348aa` | `master` |
 | 5 | 2026-05-20 | 数据库接入（SQLite） | `48f381d` | `master` |
