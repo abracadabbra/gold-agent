@@ -52,7 +52,7 @@ class DebateResult:
 
         if self.bear_argument:
             lines.append("🔴 看空方观点:")
-            for arg in self.bull_argument.get("arguments", []):
+            for arg in self.bear_argument.get("arguments", []):
                 lines.append(f"  • {arg.get('point', '')} [{arg.get('strength', '')}]")
                 lines.append(f"    依据: {arg.get('evidence', '')}")
             lines.append(f"  置信度: {self.bear_argument.get('confidence', 'N/A')}%")

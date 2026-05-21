@@ -36,24 +36,28 @@ class TestConnectionManager:
         ws = MagicMock()
         ws.client_state = WebSocketState.CONNECTED
         ws.send_json = AsyncMock()
+        ws.accept = AsyncMock()
         return ws
 
     # --- connect / disconnect ---
 
-    def test_connect_adds_client(self, manager, mock_ws):
-        manager.connect(mock_ws, "client1")
+    @pytest.mark.asyncio
+    async def test_connect_adds_client(self, manager, mock_ws):
+        await manager.connect(mock_ws, "client1")
         assert "client1" in manager.active_connections
         assert "client1" in manager.client_subscriptions
         assert mock_ws.send_json.await_count == 1
 
-    def test_disconnect_removes_client(self, manager, mock_ws):
-        manager.connect(mock_ws, "client1")
+    @pytest.mark.asyncio
+    async def test_disconnect_removes_client(self, manager, mock_ws):
+        await manager.connect(mock_ws, "client1")
         manager.disconnect("client1")
         assert "client1" not in manager.active_connections
         assert "client1" not in manager.client_subscriptions
 
-    def test_disconnect_cleans_subscriptions(self, manager, mock_ws):
-        manager.connect(mock_ws, "client1")
+    @pytest.mark.asyncio
+    async def test_disconnect_cleans_subscriptions(self, manager, mock_ws):
+        await manager.connect(mock_ws, "client1")
         manager.subscribe("client1", "price")
         assert "client1" in manager.subscriptions["price"]
 
@@ -65,13 +69,15 @@ class TestConnectionManager:
     def test_subscribe_unknown_channel_returns_false(self, manager):
         assert manager.subscribe("client1", "unknown_channel") is False
 
-    def test_subscribe_known_channel_returns_true(self, manager, mock_ws):
-        manager.connect(mock_ws, "client1")
+    @pytest.mark.asyncio
+    async def test_subscribe_known_channel_returns_true(self, manager, mock_ws):
+        await manager.connect(mock_ws, "client1")
         assert manager.subscribe("client1", "price") is True
         assert "client1" in manager.subscriptions["price"]
 
-    def test_unsubscribe_removes_client(self, manager, mock_ws):
-        manager.connect(mock_ws, "client1")
+    @pytest.mark.asyncio
+    async def test_unsubscribe_removes_client(self, manager, mock_ws):
+        await manager.connect(mock_ws, "client1")
         manager.subscribe("client1", "price")
         assert manager.unsubscribe("client1", "price") is True
         assert "client1" not in manager.subscriptions["price"]
@@ -108,8 +114,9 @@ class TestConnectionManager:
 
     # --- stats ---
 
-    def test_get_stats_format(self, manager, mock_ws):
-        manager.connect(mock_ws, "client1")
+    @pytest.mark.asyncio
+    async def test_get_stats_format(self, manager, mock_ws):
+        await manager.connect(mock_ws, "client1")
 
         stats = manager.get_stats()
         assert stats["total_connections"] == 1

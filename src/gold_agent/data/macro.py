@@ -43,7 +43,11 @@ def fetch_macro_yfinance(
 
     logger.info(f"获取宏观数据 (yfinance): {list(names.values())}")
 
-    data = yf.download(tickers, period=period, progress=False)
+    try:
+        data = yf.download(tickers, period=period, progress=False)
+    except Exception as e:
+        logger.warning(f"yfinance 宏观数据获取失败: {e}")
+        return pd.DataFrame()
 
     if data.empty:
         logger.warning("yfinance 宏观数据返回空")

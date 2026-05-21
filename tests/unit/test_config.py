@@ -5,17 +5,23 @@ from pathlib import Path
 from gold_agent.config import Settings
 
 
-def test_default_values():
-    """测试 Settings 默认值"""
-    s = Settings()
+def test_default_values(monkeypatch):
+    """测试 Settings 默认值（独立于 .env 和环境变量）"""
+    for key in [
+        "OPENAI_API_KEY", "OPENAI_BASE_URL", "LLM_MODEL_BULL", "LLM_MODEL_BEAR",
+        "LLM_MODEL_AUDITOR", "LLM_MODEL_ARBITRATOR", "FRED_API_KEY",
+        "DATABASE_URL", "REDIS_URL", "DATA_CACHE_DIR", "PARQUET_DIR",
+    ]:
+        monkeypatch.delenv(key, raising=False)
+    s = Settings(_env_file=None)
     assert s.openai_base_url == "https://api.openai.com/v1"
-    assert s.llm_model_bull == "gpt-4.1"
-    assert s.llm_model_bear == "claude-sonnet-4-20250514"
-    assert s.llm_model_auditor == "gpt-4.1-mini"
-    assert s.llm_model_arbitrator == "gpt-4.1"
+    assert s.llm_model_bull == "gpt-5.5"
+    assert s.llm_model_bear == "claude-4.7-opus"
+    assert s.llm_model_auditor == "gpt-5.5-mini"
+    assert s.llm_model_arbitrator == "gpt-5.5"
     assert s.openai_api_key == ""
     assert s.fred_api_key == ""
-    assert s.database_url == "postgresql+asyncpg://gold:gold@localhost:5432/gold_agent"
+    assert s.database_url == "sqlite:///./data/gold_agent.db"
     assert s.redis_url == "redis://localhost:6379/0"
     assert s.data_cache_dir == Path("./data/cache")
     assert s.parquet_dir == Path("./data/parquet")
