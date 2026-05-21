@@ -66,21 +66,21 @@ services:
     networks:
       - gold-network
 
-  # 可选: Next.js 前端
-  # frontend:
-  #   build:
-  #     context: ./frontend
-  #     dockerfile: Dockerfile
-  #   container_name: gold-agent-frontend
-  #   ports:
-  #     - "3000:3000"
-  #   environment:
-  #     - NEXT_PUBLIC_API_URL=http://app:8000
-  #   depends_on:
-  #     - app
-  #   restart: unless-stopped
-  #   networks:
-  #     - gold-network
+  # Next.js 前端
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: gold-agent-frontend
+    ports:
+      - "3000:3000"
+    environment:
+      - NEXT_PUBLIC_API_BASE=http://app:8000
+    depends_on:
+      - app
+    restart: unless-stopped
+    networks:
+      - gold-network
 
 volumes:
   postgres_data:

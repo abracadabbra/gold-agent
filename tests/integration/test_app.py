@@ -93,3 +93,53 @@ def test_backtest_strategies(mock_get_bt, mock_fetch):
     assert resp.status_code == 200
     data = resp.json()
     assert "strategies" in data
+
+
+@patch("gold_agent.api.analysis.fetch_all_macro")
+def test_analysis_macro(mock_macro):
+    """GET /api/analysis/macro 返回宏观数据"""
+    realtime = pd.DataFrame({
+        "date": pd.date_range("2024-01-01", periods=3, freq="D"),
+        "usd_index": [104.0, 103.5, 103.8],
+    })
+    official = pd.DataFrame({
+        "date": pd.date_range("2024-01-01", periods=3, freq="ME"),
+        "cpi": [3.1, 3.0, 2.9],
+    })
+    mock_macro.return_value = {"realtime": realtime, "official": official}
+    resp = client.get("/api/analysis/macro")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "realtime" in data
+    assert "official" in data
+    assert data["realtime"]["records"] == 3
+    assert data["official"]["records"] == 3
+
+
+@patch("gold_agent.api.analysis.fetch_news_with_sentiment")
+def test_analysis_news(mock_news):
+    """GET /api/analysis/news 返回新闻情绪"""
+    mock_news.return_value = pd.DataFrame({
+        "title": ["Gold rally surge", "Rate hike"],
+        "link": ["http://a.com", "http://b.com"],
+        "published": ["", ""],
+        "source": ["test", "test"],
+        "sentiment_score": [0.6, -0.1],
+        "sentiment_label": ["bullish", "neutral"],
+    })
+    resp = client.get("/api/analysis/news")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["total"] == 2
+    # avg = (0.6 + -0.1) / 2 = 0.25 > 0.2 -> bullish
+    assert data["label"] == "bullish"
+
+
+@patch("gold_agent.api.extra_data.cache.get")
+def test_extra_calendar(mock_cache):
+    """GET /api/analysis/calendar 返回财经日历"""
+    resp = client.get("/api/analysis/calendar?days=30")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "data" in data
+    assert "next_event" in data

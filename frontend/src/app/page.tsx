@@ -1,4 +1,7 @@
+'use client';
+import { useState, useEffect } from 'react';
 import Link from "next/link";
+import { api } from '@/lib/api';
 
 type MetricCardProps = {
   label: string;
@@ -20,6 +23,8 @@ const topMetrics = [
   { label: "预计区间", value: "4501.035-\n4772.385", tone: "default" as const },
 ];
 
+const DEFAULT_METRICS = [...topMetrics];
+
 const statusPills = [
   "置信度 中",
   "建议强度 观望",
@@ -31,6 +36,8 @@ const statusPills = [
   "距开市 20小时19分钟",
   "距休市 19小时19分钟",
 ];
+
+const DEFAULT_PILLS = [...statusPills];
 
 const macroSummary = [
   "美国10年期收益率，实际 4.35%，前值 4.36%，surprise=medium，priced_in=medium",
@@ -177,6 +184,40 @@ function SectionCard({ title, children, delay = 0, className = "" }: SectionCard
 }
 
 export default function Home() {
+  const [metrics, setMetrics] = useState(DEFAULT_METRICS);
+  const [pills, setPills] = useState(DEFAULT_PILLS);
+  const [signalLabel, setSignalLabel] = useState('偏空');
+  const [signalDesc, setSignalDesc] = useState('区间内偏弱运行');
+
+  useEffect(() => {
+    Promise.allSettled([
+      api.signal(),
+      api.quick(),
+    ]).then(([signalRes, quickRes]) => {
+      if (signalRes.status === 'fulfilled') {
+        const s = signalRes.value.signal;
+        const labelMap: Record<string, string> = {
+          STRONG_BUY: '强烈看多', BUY: '看多',
+          NEUTRAL: '中性', SELL: '看空', STRONG_SELL: '强烈看空',
+        };
+        setSignalLabel(labelMap[s.signal_type] || '偏空');
+        setSignalDesc(`置信度 ${(s.confidence * 100).toFixed(0)}% · 得分 ${s.score}`);
+        setMetrics([
+          { label: '多头概率', value: `${Math.max(0, s.score)}%`, tone: 'accent' },
+          { label: '空头概率', value: `${Math.max(0, -s.score)}%`, tone: 'danger' },
+          { label: '置信度', value: `${(s.confidence * 100).toFixed(0)}%`, tone: 'accent' },
+          { label: '止盈/止损', value: `${s.take_profit?.toFixed(0) ?? '-'} / ${s.stop_loss?.toFixed(0) ?? '-'}`, tone: 'default' },
+        ]);
+        setPills([
+          `置信度 ${(s.confidence * 100).toFixed(0)}%`,
+          `建议强度 ${s.signal_type === 'STRONG_SELL' || s.signal_type === 'SELL' ? '观望' : '关注'}`,
+          `止损 ${s.stop_loss?.toFixed(0) ?? '-'} · 止盈 ${s.take_profit?.toFixed(0) ?? '-'}`,
+          ...DEFAULT_PILLS.slice(3),
+        ]);
+      }
+    });
+  }, []);
+
   return (
     <main className="min-h-screen">
       <div className="dashboard-shell">
@@ -191,19 +232,19 @@ export default function Home() {
           </div>
           <div className="rounded-[24px] bg-[rgba(255,253,247,0.7)] p-4 md:p-5">
             <p className="eyebrow">Gold AI</p>
-            <h1 className="mt-3 font-display text-4xl leading-none md:text-[3.2rem]">偏空</h1>
-            <p className="mt-3 text-lg muted-copy">区间内偏弱运行</p>
+            <h1 className="mt-3 font-display text-4xl leading-none md:text-[3.2rem]">{signalLabel}</h1>
+            <p className="mt-3 text-lg muted-copy">{signalDesc}</p>
           </div>
 
           <div>
             <div className="grid gap-4 md:grid-cols-4">
-              {topMetrics.map((metric) => (
+              {metrics.map((metric) => (
                 <MetricCard key={metric.label} {...metric} />
               ))}
             </div>
 
             <div className="mt-5 flex flex-wrap gap-2.5">
-              {statusPills.map((pill) => (
+              {pills.map((pill) => (
                 <span key={pill} className="data-pill">
                   {pill}
                 </span>
