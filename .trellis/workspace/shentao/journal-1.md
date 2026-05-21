@@ -307,3 +307,36 @@ Add GC=F gold to macro yfinance tickers, frontend useWebSocket hook with auto-re
 ### Next Steps
 
 - None - task complete
+
+
+## Session 10: Phase C 质量提升
+
+**Date**: 2026-05-21
+**Task**: Phase C 质量提升
+**Branch**: `master`
+
+### Summary
+
+Landing page: use client + live signal/quick API; integration tests: macro/news/calendar (total 12); frontend Dockerfile + docker-compose uncomment
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `98949d7` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
