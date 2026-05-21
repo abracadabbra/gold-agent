@@ -226,7 +226,7 @@ function PriceChartCard({ refreshKey }: { refreshKey: number }) {
       <ResponsiveContainer width="100%" height={280}>
         <ComposedChart data={chartData}>
           <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
-          <XAxis dataKey="date" tick={{ fontSize: 12 }} stroke="var(--muted)" />
+          <XAxis dataKey="date" tick={{ fontSize: 12 }} stroke="var(--muted)" tickFormatter={(v: string) => v.slice(0, 10)} />
           <YAxis yAxisId="price" stroke="var(--muted)" tick={{ fontSize: 12 }} />
           <YAxis yAxisId="volume" orientation="right" hide />
           <Tooltip content={<ChartTooltip />} />

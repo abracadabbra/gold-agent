@@ -146,6 +146,7 @@ class DataCache:
         fetch_fn,
         use_cache: bool = True,
         db_save_fn=None,
+        max_stale_days: int | None = None,
         **kwargs
     ) -> pd.DataFrame:
         """
@@ -156,6 +157,7 @@ class DataCache:
             fetch_fn: 数据获取函数 (返回 DataFrame)
             use_cache: 是否使用缓存
             db_save_fn: 可选的 DB 保存回调，传入 (records: list[dict])
+            max_stale_days: Parquet 数据最大允许过期天数，None=不过期检查
             **kwargs: 传递给 fetch_fn 的参数
         """
         # 1. 尝试 Redis
@@ -168,9 +170,19 @@ class DataCache:
         if use_cache:
             cached = self.load_parquet(key)
             if not cached.empty:
-                # 回填 Redis
-                self.set_redis(key, cached)
-                return cached
+                if max_stale_days is not None and "date" in cached.columns:
+                    latest = cached["date"].max()
+                    if pd.notna(latest) and (pd.Timestamp.now() - latest).days > max_stale_days:
+                        logger.info(
+                            f"Parquet 缓存过期 ({key}): 最新 {latest.date()}, "
+                            f"超过 {max_stale_days} 天"
+                        )
+                    else:
+                        self.set_redis(key, cached)
+                        return cached
+                else:
+                    self.set_redis(key, cached)
+                    return cached
 
         # 3. 调用获取函数
         logger.info(f"缓存未命中，调用 fetch_fn: {key}")

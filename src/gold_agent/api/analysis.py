@@ -34,7 +34,8 @@ async def get_gold_price(
             key=f"gold_{source}",
             fetch_fn=fetch_gold_price,
             source=source,
-            period=period,
+            period="1y",
+            max_stale_days=1,
         )
         return {
             "source": source,
@@ -59,6 +60,7 @@ async def get_indicators(
             fetch_fn=fetch_gold_price,
             source=source,
             period=period,
+            max_stale_days=1,
         )
 
         indicators = compute_indicators(df)
@@ -86,6 +88,7 @@ async def get_signal(
             fetch_fn=fetch_gold_price,
             source=source,
             period=period,
+            max_stale_days=1,
         )
 
         signal = generate_signal(df)
@@ -108,10 +111,11 @@ async def get_prediction(
     """时序预测"""
     try:
         df = cache.get(
-            key=f"gold_{source}_2y",
+            key=f"gold_{source}",
             fetch_fn=fetch_gold_price,
             source=source,
-            period="2y",
+            period="1y",
+            max_stale_days=1,
         )
 
         # 获取宏观数据作为回归因子

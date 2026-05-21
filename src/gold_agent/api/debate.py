@@ -22,7 +22,10 @@ async def _build_context() -> str:
 
     # 金价数据
     try:
-        df = cache.get(key="gold_intl", fetch_fn=fetch_gold_price, source="intl", period="1y")
+        df = cache.get(
+            key="gold_intl", fetch_fn=fetch_gold_price,
+            source="intl", period="1y", max_stale_days=1,
+        )
         parts.append("### 国际金价 (XAUUSD)\n" + get_indicator_summary(df))
 
         signal = generate_signal(df)
