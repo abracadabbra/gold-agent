@@ -13,7 +13,7 @@ def _json_safe(df: pd.DataFrame) -> list[dict[str, Any]]:
     return df.where(df.notna(), None).astype(object).where(df.notna(), None).to_dict(orient="records")  # noqa: E501
 
 from gold_agent.data.gold_price import fetch_gold_price
-from gold_agent.data.macro import fetch_macro_yfinance, fetch_all_macro
+from gold_agent.data.macro import fetch_macro_yfinance, fetch_macro_fred
 from gold_agent.data.news import fetch_news_with_sentiment
 from gold_agent.data.cache import cache
 from gold_agent.quant.indicators import compute_indicators, get_indicator_summary
@@ -118,8 +118,13 @@ async def get_prediction(
             max_stale_days=1,
         )
 
-        # 获取宏观数据作为回归因子
-        macro_df = fetch_macro_yfinance(period="2y")
+        # 获取宏观数据作为回归因子（使用缓存）
+        macro_df = cache.get(
+            key="macro_yfinance_2y",
+            fetch_fn=fetch_macro_yfinance,
+            period="2y",
+            ttl=3600,
+        )
         regressors = {}
         if not macro_df.empty:
             for col in ["usd_index", "vix", "us_10y"]:
@@ -162,9 +167,18 @@ async def get_prediction(
 async def get_macro_data(period: str = Query("1y")):
     """获取宏观数据 (yfinance 实时 + FRED 官方)"""
     try:
-        data = fetch_all_macro(period=period)
-        realtime = data["realtime"]
-        official = data["official"]
+        realtime = cache.get(
+            key=f"macro_yfinance_{period}",
+            fetch_fn=fetch_macro_yfinance,
+            period=period,
+            ttl=3600,
+        )
+        official = cache.get(
+            key="macro_fred",
+            fetch_fn=fetch_macro_fred,
+            start_date="2020-01-01",
+            ttl=3600,
+        )
 
         def _format(df: pd.DataFrame) -> dict:
             if df.empty:
@@ -188,7 +202,11 @@ async def get_macro_data(period: str = Query("1y")):
 async def get_news():
     """获取新闻情绪"""
     try:
-        df = fetch_news_with_sentiment()
+        df = cache.get(
+            key="news_sentiment",
+            fetch_fn=fetch_news_with_sentiment,
+            ttl=300,
+        )
         avg_score = float(df["sentiment_score"].mean()) if not df.empty else 0
 
         return {

@@ -1,5 +1,6 @@
 """补充数据聚合接口 — GET /api/analysis/extra"""
 
+import asyncio
 import logging
 from typing import Any
 
@@ -38,22 +39,22 @@ def _json_safe(df: pd.DataFrame) -> list[dict[str, Any]]:
     )
 
 
+# 各数据源的缓存 TTL 配置
+TTL_MAP: dict[str, int] = {
+    "central_bank_reserves": 604800,   # 7 天
+    "cot": 86400,                       # 1 天
+    "etf_flow": 604800,                 # 7 天
+    "geopol": 86400,                    # 1 天
+    "fedwatch": 21600,                  # 6 小时
+    "aisc": 2592000,                    # 30 天
+}
+
+
 def _safe_fetch(key: str, fetch_fn, **kwargs) -> dict:
-    """安全调用 fetch_fn，失败返回空"""
-    ttl_map = {
-        "central_bank_reserves": 604800,   # 7 天
-        "cot": 86400,                       # 1 天
-        "etf_flow": 604800,                 # 7 天
-        "geopol": 86400,                    # 1 天
-        "fedwatch": 21600,                  # 6 小时
-        "aisc": 2592000,                    # 30 天
-    }
-    old_ttl = None
-    if key in ttl_map:
-        old_ttl = cache.cache_ttl
-        cache.cache_ttl = ttl_map[key]
+    """同步安全调用 fetch_fn，失败返回空"""
     try:
-        df = cache.get(key=key, fetch_fn=fetch_fn, **kwargs)
+        ttl = TTL_MAP.get(key)
+        df = cache.get(key=key, fetch_fn=fetch_fn, ttl=ttl, **kwargs)
         records = len(df)
         out = df.tail(100).copy()
         if "date" in out.columns:
@@ -72,47 +73,40 @@ def _safe_fetch(key: str, fetch_fn, **kwargs) -> dict:
             "_status": "error",
             "_error": str(e),
         }
-    finally:
-        if old_ttl is not None:
-            cache.cache_ttl = old_ttl
+
+
+async def _safe_fetch_async(key: str, fetch_fn, **kwargs) -> dict:
+    """异步安全调用 — 在 executor 中运行同步 _safe_fetch"""
+    loop = asyncio.get_event_loop()
+    return await loop.run_in_executor(None, _safe_fetch, key, fetch_fn, **kwargs)
 
 
 @router.get("/extra")
 async def get_extra_data():
-    """获取所有补充数据"""
-    results: dict[str, Any] = {}
+    """获取所有补充数据（并行获取）"""
+    tasks = {
+        "central_bank": _safe_fetch_async("central_bank_reserves", fetch_central_bank_reserves),
+        "cot": _safe_fetch_async("cot", fetch_cot),
+        "etf_flow": _safe_fetch_async("etf_flow", fetch_etf_flow),
+        "geopol": _safe_fetch_async("geopol", fetch_geopol),
+        "fedwatch": _safe_fetch_async("fedwatch", fetch_fedwatch),
+        "aisc": _safe_fetch_async("aisc", fetch_aisc),
+        "cpi": _safe_fetch_async("china_cpi", fetch_china_cpi),
+        "ppi": _safe_fetch_async("china_ppi", fetch_china_ppi),
+        "pmi": _safe_fetch_async("china_pmi", fetch_china_pmi),
+        "m2": _safe_fetch_async("china_m2", fetch_china_m2),
+        "gdp": _safe_fetch_async("china_gdp", fetch_china_gdp),
+        "lpr": _safe_fetch_async("china_lpr", fetch_china_lpr),
+        "usd_cny": _safe_fetch_async("china_usd_cny", fetch_china_fx),
+    }
 
-    # 1. 央行黄金储备
-    results["central_bank"] = _safe_fetch("central_bank_reserves", fetch_central_bank_reserves)
+    results_list = await asyncio.gather(*tasks.values())
+    results: dict[str, Any] = dict(zip(tasks.keys(), results_list))
 
-    # 2. CFTC COT
-    results["cot"] = _safe_fetch("cot", fetch_cot)
-
-    # 3. ETF 流量
-    results["etf_flow"] = _safe_fetch("etf_flow", fetch_etf_flow)
-
-    # 4. GPR 指数
-    results["geopol"] = _safe_fetch("geopol", fetch_geopol)
-
-    # 5. FedWatch
-    results["fedwatch"] = _safe_fetch("fedwatch", fetch_fedwatch)
-
-    # 6. 中国宏观 — 每个指标独立缓存
-    china_data = {}
-    for indicator_name, fetch_fn, cache_key in [
-        ("cpi", fetch_china_cpi, "china_cpi"),
-        ("ppi", fetch_china_ppi, "china_ppi"),
-        ("pmi", fetch_china_pmi, "china_pmi"),
-        ("m2", fetch_china_m2, "china_m2"),
-        ("gdp", fetch_china_gdp, "china_gdp"),
-        ("lpr", fetch_china_lpr, "china_lpr"),
-        ("usd_cny", fetch_china_fx, "china_usd_cny"),
-    ]:
-        china_data[indicator_name] = _safe_fetch(cache_key, fetch_fn)
+    # 将 7 个中国指标合并到一个 china_macro 字段
+    china_keys = ["cpi", "ppi", "pmi", "m2", "gdp", "lpr", "usd_cny"]
+    china_data = {k: results.pop(k) for k in china_keys}
     results["china_macro"] = china_data
-
-    # 7. AISC
-    results["aisc"] = _safe_fetch("aisc", fetch_aisc)
 
     return results
 

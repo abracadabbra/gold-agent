@@ -95,8 +95,8 @@ def test_backtest_strategies(mock_get_bt, mock_fetch):
     assert "strategies" in data
 
 
-@patch("gold_agent.api.analysis.fetch_all_macro")
-def test_analysis_macro(mock_macro):
+@patch("gold_agent.api.analysis.cache.get")
+def test_analysis_macro(mock_cache):
     """GET /api/analysis/macro 返回宏观数据"""
     realtime = pd.DataFrame({
         "date": pd.date_range("2024-01-01", periods=3, freq="D"),
@@ -106,7 +106,16 @@ def test_analysis_macro(mock_macro):
         "date": pd.date_range("2024-01-01", periods=3, freq="ME"),
         "cpi": [3.1, 3.0, 2.9],
     })
-    mock_macro.return_value = {"realtime": realtime, "official": official}
+
+    def cache_side_effect(key, **kwargs):
+        if key.startswith("macro_yfinance"):
+            return realtime
+        if key == "macro_fred":
+            return official
+        return pd.DataFrame()
+
+    mock_cache.side_effect = cache_side_effect
+
     resp = client.get("/api/analysis/macro")
     assert resp.status_code == 200
     data = resp.json()
@@ -116,10 +125,10 @@ def test_analysis_macro(mock_macro):
     assert data["official"]["records"] == 3
 
 
-@patch("gold_agent.api.analysis.fetch_news_with_sentiment")
-def test_analysis_news(mock_news):
+@patch("gold_agent.api.analysis.cache.get")
+def test_analysis_news(mock_cache):
     """GET /api/analysis/news 返回新闻情绪"""
-    mock_news.return_value = pd.DataFrame({
+    mock_cache.return_value = pd.DataFrame({
         "title": ["Gold rally surge", "Rate hike"],
         "link": ["http://a.com", "http://b.com"],
         "published": ["", ""],

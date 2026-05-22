@@ -173,12 +173,18 @@ class TestAnalysisPredict:
 class TestAnalysisMacro:
     """宏观数据端点"""
 
-    @patch("gold_agent.api.analysis.fetch_all_macro")
-    def test_get_macro_success(self, mock_fetch):
-        mock_fetch.return_value = {
-            "realtime": _fake_macro(),
-            "official": _fake_macro(),
-        }
+    @patch("gold_agent.api.analysis.cache.get")
+    def test_get_macro_success(self, mock_cache):
+        macro = _fake_macro()
+
+        def side_effect(key, **kwargs):
+            if key.startswith("macro_yfinance"):
+                return macro
+            if key == "macro_fred":
+                return macro
+            return pd.DataFrame()
+
+        mock_cache.side_effect = side_effect
 
         resp = client.get("/api/analysis/macro?period=1y")
         assert resp.status_code == 200
@@ -196,9 +202,9 @@ class TestAnalysisMacro:
 class TestAnalysisNews:
     """新闻情绪端点"""
 
-    @patch("gold_agent.api.analysis.fetch_news_with_sentiment")
-    def test_get_news_success(self, mock_news):
-        mock_news.return_value = _fake_news()
+    @patch("gold_agent.api.analysis.cache.get")
+    def test_get_news_success(self, mock_cache):
+        mock_cache.return_value = _fake_news()
 
         resp = client.get("/api/analysis/news")
         assert resp.status_code == 200

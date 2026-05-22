@@ -1,10 +1,13 @@
 """辩论接口"""
 
+import asyncio
 import json
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 import logging
 logger = logging.getLogger(__name__)
+
+import pandas as pd
 
 from gold_agent.data.gold_price import fetch_gold_price
 from gold_agent.data.macro import fetch_macro_yfinance
@@ -19,31 +22,24 @@ router = APIRouter(prefix="/api/debate", tags=["辩论"])
 
 
 async def _build_context() -> str:
-    """构建辩论上下文 — 汇总所有数据"""
-    parts = []
+    """构建辩论上下文 — 并行获取独立数据源"""
+    loop = asyncio.get_event_loop()
 
-    # 金价数据
-    try:
+    async def _run_sync(fn, *args, **kwargs):
+        return await loop.run_in_executor(None, lambda: fn(*args, **kwargs))
+
+    # 金价、宏观、新闻 — 并行获取（三者独立）
+    async def _fetch_gold():
         df = cache.get(
             key="gold_intl", fetch_fn=fetch_gold_price,
             source="intl", period="1y", max_stale_days=1,
         )
-        parts.append("### 国际金价 (XAUUSD)\n" + get_indicator_summary(df))
-
+        parts = ["### 国际金价 (XAUUSD)\n" + get_indicator_summary(df)]
         signal = generate_signal(df)
         parts.append(get_signal_summary(signal))
-    except Exception as e:
-        logger.warning(f"金价数据获取失败: {e}")
+        return "\n".join(parts), df
 
-    # 预测
-    try:
-        pred = predict_gold_price(df, days=7)
-        parts.append(get_prediction_summary(pred))
-    except Exception as e:
-        logger.warning(f"预测失败: {e}")
-
-    # 宏观数据
-    try:
+    async def _fetch_macro():
         macro = fetch_macro_yfinance(period="1mo")
         if not macro.empty:
             latest = macro.iloc[-1]
@@ -51,12 +47,10 @@ async def _build_context() -> str:
             for col in macro.columns:
                 if col != "date" and latest.get(col) is not None:
                     lines.append(f"- {col}: {latest[col]:.2f}")
-            parts.append("\n".join(lines))
-    except Exception as e:
-        logger.warning(f"宏观数据获取失败: {e}")
+            return "\n".join(lines)
+        return ""
 
-    # 新闻
-    try:
+    async def _fetch_news():
         news_df = fetch_news_with_sentiment()
         if not news_df.empty:
             avg = news_df["sentiment_score"].mean()
@@ -64,10 +58,42 @@ async def _build_context() -> str:
             lines = [f"### 新闻情绪 (平均得分: {avg:.3f}, 倾向: {label})"]
             for _, row in news_df.head(10).iterrows():
                 lines.append(f"- [{row['sentiment_label']}] {row['title']}")
-            parts.append("\n".join(lines))
+            return "\n".join(lines)
+        return ""
+
+    gold_task = asyncio.create_task(_fetch_gold())
+    macro_task = asyncio.create_task(_fetch_macro())
+    news_task = asyncio.create_task(_fetch_news())
+
+    gold_result = ""
+    df: pd.DataFrame = pd.DataFrame()
+    try:
+        gold_result, df = await _fetch_gold() if False else await gold_task
+    except Exception as e:
+        logger.warning(f"金价数据获取失败: {e}")
+
+    macro_result = ""
+    try:
+        macro_result = await macro_task
+    except Exception as e:
+        logger.warning(f"宏观数据获取失败: {e}")
+
+    news_result = ""
+    try:
+        news_result = await news_task
     except Exception as e:
         logger.warning(f"新闻获取失败: {e}")
 
+    # 预测依赖金价 df，串行
+    pred_result = ""
+    if not df.empty:
+        try:
+            pred = predict_gold_price(df, days=7)
+            pred_result = get_prediction_summary(pred)
+        except Exception as e:
+            logger.warning(f"预测失败: {e}")
+
+    parts = [p for p in [gold_result, pred_result, macro_result, news_result] if p]
     return "\n\n---\n\n".join(parts)
 
 

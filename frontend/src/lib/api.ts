@@ -21,17 +21,53 @@ const API_BASE = process.env.NEXT_PUBLIC_API_BASE || 'http://localhost:8000';
 
 const WS_BASE = API_BASE.replace(/^http/, 'ws');
 
+// ── Response cache (client-side, for instant remount) ──
+const responseCache = new Map<string, { data: unknown; ts: number }>();
+const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+
+export function getCached<T>(key: string): T | null {
+  const entry = responseCache.get(key);
+  if (entry && Date.now() - entry.ts < CACHE_TTL) return entry.data as T;
+  responseCache.delete(key);
+  return null;
+}
+
+// ── Request deduplication ──
+const inflight = new Map<string, Promise<unknown>>();
+
 async function fetchJson<T>(path: string, options?: RequestInit): Promise<T> {
   const url = `${API_BASE}${path}`;
-  const res = await fetch(url, {
-    ...options,
-    headers: { 'Content-Type': 'application/json', ...options?.headers },
-  });
-  if (!res.ok) {
-    const text = await res.text().catch(() => '');
-    throw new Error(`HTTP ${res.status}${text ? ` — ${text.slice(0, 200)}` : ''}`);
+  const key = `${options?.method || 'GET'}:${url}`;
+
+  // Serve from cache for GET requests
+  if (!options?.method || options.method === 'GET') {
+    const cached = getCached<T>(key);
+    if (cached) return cached;
   }
-  return res.json();
+
+  const prev = inflight.get(key);
+  if (prev) return prev as Promise<T>;
+
+  const promise = (async () => {
+    const res = await fetch(url, {
+      ...options,
+      headers: { 'Content-Type': 'application/json', ...options?.headers },
+    });
+    if (!res.ok) {
+      const text = await res.text().catch(() => '');
+      throw new Error(`HTTP ${res.status}${text ? ` — ${text.slice(0, 200)}` : ''}`);
+    }
+    const data = await res.json();
+    // Cache GET responses
+    if (!options?.method || options.method === 'GET') {
+      responseCache.set(key, { data, ts: Date.now() });
+    }
+    return data;
+  })();
+
+  inflight.set(key, promise);
+  promise.finally(() => { if (inflight.get(key) === promise) inflight.delete(key); });
+  return promise as Promise<T>;
 }
 
 export const api = {

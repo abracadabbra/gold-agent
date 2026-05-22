@@ -85,7 +85,11 @@ class DataCache:
         files = files[-months:]
 
         dfs = [pd.read_parquet(f) for f in files]
-        df = pd.concat(dfs, ignore_index=True).drop_duplicates()
+        try:
+            df = pd.concat(dfs, ignore_index=True).drop_duplicates()
+        except TypeError:
+            df = pd.concat(dfs, ignore_index=True)
+            logger.warning(f"{key}: 无法去重（含不可哈希列），跳过 drop_duplicates")
 
         if "date" in df.columns:
             df = df.sort_values("date").reset_index(drop=True)
@@ -120,7 +124,7 @@ class DataCache:
             logger.warning(f"Redis 反序列化失败: {e}")
             return None
 
-    def set_redis(self, key: str, df: pd.DataFrame) -> bool:
+    def set_redis(self, key: str, df: pd.DataFrame, ttl: int | None = None) -> bool:
         """写入 Redis 缓存"""
         if not self.redis or df.empty:
             return False
@@ -131,8 +135,9 @@ class DataCache:
             data = df.copy()
             if "date" in data.columns:
                 data["date"] = data["date"].astype(str)
-            self.redis.setex(rkey, self.cache_ttl, json.dumps(data.to_dict(orient="records")))
-            logger.debug(f"Redis 缓存写入: {key} (TTL={self.cache_ttl}s)")
+            effective_ttl = ttl or self.cache_ttl
+            self.redis.setex(rkey, effective_ttl, json.dumps(data.to_dict(orient="records")))
+            logger.debug(f"Redis 缓存写入: {key} (TTL={effective_ttl}s)")
             return True
         except Exception as e:
             logger.warning(f"Redis 写入失败: {e}")
@@ -147,6 +152,7 @@ class DataCache:
         use_cache: bool = True,
         db_save_fn=None,
         max_stale_days: int | None = None,
+        ttl: int | None = None,
         **kwargs
     ) -> pd.DataFrame:
         """
@@ -158,6 +164,7 @@ class DataCache:
             use_cache: 是否使用缓存
             db_save_fn: 可选的 DB 保存回调，传入 (records: list[dict])
             max_stale_days: Parquet 数据最大允许过期天数，None=不过期检查
+            ttl: Redis TTL（秒），None 使用实例默认值
             **kwargs: 传递给 fetch_fn 的参数
         """
         # 1. 尝试 Redis
@@ -178,10 +185,10 @@ class DataCache:
                             f"超过 {max_stale_days} 天"
                         )
                     else:
-                        self.set_redis(key, cached)
+                        self.set_redis(key, cached, ttl=ttl)
                         return cached
                 else:
-                    self.set_redis(key, cached)
+                    self.set_redis(key, cached, ttl=ttl)
                     return cached
 
         # 3. 调用获取函数
@@ -190,7 +197,7 @@ class DataCache:
 
         if not df.empty:
             self.save_parquet(key, df)
-            self.set_redis(key, df)
+            self.set_redis(key, df, ttl=ttl)
             if db_save_fn:
                 try:
                     records = df.to_dict(orient="records")

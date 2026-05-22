@@ -129,8 +129,8 @@ def fetch_news_with_sentiment(max_items: int = 30) -> pd.DataFrame:
     sentiments = df["title"].apply(analyze_sentiment)
     df["sentiment_score"] = sentiments.apply(lambda x: x["score"])
     df["sentiment_label"] = sentiments.apply(lambda x: x["label"])
-    df["bull_hits"] = sentiments.apply(lambda x: x["bull_hits"])
-    df["bear_hits"] = sentiments.apply(lambda x: x["bear_hits"])
+    df["bull_hits"] = sentiments.apply(lambda x: ",".join(x["bull_hits"]))
+    df["bear_hits"] = sentiments.apply(lambda x: ",".join(x["bear_hits"]))
 
     # 计算整体情绪
     avg_score = df["sentiment_score"].mean()
