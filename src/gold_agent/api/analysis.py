@@ -165,18 +165,20 @@ async def get_macro_data(period: str = Query("1y")):
         data = fetch_all_macro(period=period)
         realtime = data["realtime"]
         official = data["official"]
-        return {
-            "realtime": {
-                "records": len(realtime),
-                "columns": list(realtime.columns) if not realtime.empty else [],
-                "data": _json_safe(realtime.tail(100)),
-            },
-            "official": {
-                "records": len(official),
-                "columns": list(official.columns) if not official.empty else [],
-                "data": _json_safe(official.tail(100)),
-            },
-        }
+
+        def _format(df: pd.DataFrame) -> dict:
+            if df.empty:
+                return {"records": 0, "columns": [], "data": []}
+            d = df.tail(100).copy()
+            if "date" in d.columns:
+                d["date"] = d["date"].dt.strftime("%Y-%m-%d")
+            return {
+                "records": len(d),
+                "columns": list(d.columns),
+                "data": _json_safe(d),
+            }
+
+        return {"realtime": _format(realtime), "official": _format(official)}
     except Exception as e:
         logger.error(f"获取宏观数据失败: {e}")
         raise HTTPException(status_code=500, detail=str(e))

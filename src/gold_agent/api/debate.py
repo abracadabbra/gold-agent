@@ -1,6 +1,8 @@
 """辩论接口"""
 
+import json
 from fastapi import APIRouter, HTTPException
+from fastapi.responses import StreamingResponse
 import logging
 logger = logging.getLogger(__name__)
 
@@ -87,6 +89,44 @@ async def run_debate():
     except Exception as e:
         logger.error(f"辩论失败: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/run/stream")
+async def stream_debate():
+    """SSE 流式辩论 — 逐轮推送进度"""
+    stage_meta = {
+        "bull": {"label": "看多方", "color": "#22c55e"},
+        "bear": {"label": "看空方", "color": "#ff4444"},
+        "audit": {"label": "数据审计", "color": "#3b82f6"},
+        "verdict": {"label": "最终裁决", "color": "#eab308"},
+    }
+
+    async def event_stream():
+        try:
+            context = await _build_context()
+            engine = DebateEngine()
+            async for stage, data in engine.stream_debate(context):
+                if stage == "complete":
+                    # data 是 DebateResult
+                    payload = json.dumps({
+                        "summary": data.to_summary(),
+                        "detail": data.to_dict(),
+                    }, ensure_ascii=False)
+                    yield f"event: complete\ndata: {payload}\n\n"
+                else:
+                    meta = stage_meta.get(stage, {"label": stage, "color": "#888"})
+                    payload = json.dumps({
+                        "stage": stage,
+                        "label": meta["label"],
+                        "color": meta["color"],
+                        "result": data.parsed,
+                    }, ensure_ascii=False)
+                    yield f"event: stage\ndata: {payload}\n\n"
+        except Exception as e:
+            logger.error(f"流式辩论失败: {e}")
+            yield f"event: error\ndata: {json.dumps({'error': str(e)})}\n\n"
+
+    return StreamingResponse(event_stream(), media_type="text/event-stream")
 
 
 @router.get("/quick")

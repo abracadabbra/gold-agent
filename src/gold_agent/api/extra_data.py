@@ -55,7 +55,10 @@ def _safe_fetch(key: str, fetch_fn, **kwargs) -> dict:
     try:
         df = cache.get(key=key, fetch_fn=fetch_fn, **kwargs)
         records = len(df)
-        data = _json_safe(df.tail(100))
+        out = df.tail(100).copy()
+        if "date" in out.columns:
+            out["date"] = out["date"].dt.strftime("%Y-%m-%d")
+        data = _json_safe(out)
         return {
             "records": records,
             "data": data,
@@ -129,10 +132,16 @@ async def get_calendar(
 
         next_event = get_next_major_event()
 
+        data = df.to_dict(orient="records")
+        # Format dates
+        for row in data:
+            if "date" in row and row["date"] is not None:
+                row["date"] = str(row["date"])[:10]
+
         return {
             "records": len(df),
             "next_event": next_event,
-            "data": df.to_dict(orient="records"),
+            "data": data,
         }
     except Exception as e:
         logger.error(f"获取财经日历失败: {e}")

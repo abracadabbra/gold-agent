@@ -2,6 +2,7 @@
 
 import json
 from dataclasses import dataclass
+from collections.abc import AsyncGenerator
 
 import logging
 logger = logging.getLogger(__name__)
@@ -225,3 +226,83 @@ class DebateEngine:
 
         logger.info("辩论完成!")
         return result
+
+    async def stream_debate(
+        self, data_context: str
+    ) -> AsyncGenerator[tuple[str, DebateRound | DebateResult], None]:
+        """
+        流式辩论 — 逐轮 yield (stage_name, round) 供 SSE 消费。
+
+        stage_name: bull / bear / audit / verdict
+        """
+        result = DebateResult(rounds=[])
+        context = self._build_context(data_context)
+
+        # ---- Step 1: 看多方 ----
+        logger.info("=" * 40 + " Round 1: 看多方 " + "=" * 40)
+        bull_messages = [
+            {"role": "system", "content": self.agents["advocate"].system_prompt},
+            {"role": "user", "content": context},
+        ]
+        bull_round = await self._run_agent(self.agents["advocate"], bull_messages)
+        result.rounds.append(bull_round)
+        result.bull_argument = bull_round.parsed
+        yield ("bull", bull_round)
+
+        # ---- Step 2: 看空方 ----
+        logger.info("=" * 40 + " Round 2: 看空方 " + "=" * 40)
+        bear_messages = [
+            {"role": "system", "content": self.agents["challenger"].system_prompt},
+            {"role": "user", "content": context},
+        ]
+        bear_round = await self._run_agent(self.agents["challenger"], bear_messages)
+        result.rounds.append(bear_round)
+        result.bear_argument = bear_round.parsed
+        yield ("bear", bear_round)
+
+        # ---- Step 3: 数据审计 ----
+        logger.info("=" * 40 + " Round 3: 数据审计 " + "=" * 40)
+        audit_context = f"""{context}
+
+## 看多方论点
+{json.dumps(result.bull_argument, ensure_ascii=False, indent=2)}
+
+## 看空方论点
+{json.dumps(result.bear_argument, ensure_ascii=False, indent=2)}
+
+请验证以上双方引用的数据是否准确。"""
+        audit_messages = [
+            {"role": "system", "content": self.agents["auditor"].system_prompt},
+            {"role": "user", "content": audit_context},
+        ]
+        audit_round = await self._run_agent(self.agents["auditor"], audit_messages)
+        result.rounds.append(audit_round)
+        result.audit_result = audit_round.parsed
+        yield ("audit", audit_round)
+
+        # ---- Step 4: 仲裁裁决 ----
+        logger.info("=" * 40 + " Round 4: 仲裁裁决 " + "=" * 40)
+        arb_context = f"""{context}
+
+## 看多方论点
+{json.dumps(result.bull_argument, ensure_ascii=False, indent=2)}
+
+## 看空方论点
+{json.dumps(result.bear_argument, ensure_ascii=False, indent=2)}
+
+## 数据审计结果
+{json.dumps(result.audit_result, ensure_ascii=False, indent=2)}
+
+请基于以上所有信息做出最终裁决。"""
+        arb_messages = [
+            {"role": "system", "content": self.agents["arbitrator"].system_prompt},
+            {"role": "user", "content": arb_context},
+        ]
+        arb_round = await self._run_agent(self.agents["arbitrator"], arb_messages)
+        result.rounds.append(arb_round)
+        result.final_verdict = arb_round.parsed
+        yield ("verdict", arb_round)
+
+        logger.info("辩论完成!")
+        # 在 generator 结束时携带完整结果
+        yield ("complete", result)

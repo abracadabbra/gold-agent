@@ -63,18 +63,13 @@ def fetch_cot(year: int | None = None) -> pd.DataFrame:
 
         # 标准化列名
         col_map = {
-            "Date": "date",
-            "date": "date",
             "Market and Exchange Names": "exchange",
-            "Open Interest": "open_interest",
-            "Prod Long": "producer_long",
-            "Prod Short": "producer_short",
-            "Swap Long": "swap_long",
-            "Swap Short": "swap_short",
-            "M M Long": "managed_money_long",
-            "M M Short": "managed_money_short",
-            "Other Long": "other_long",
-            "Other Short": "other_short",
+            "As of Date in Form YYYY-MM-DD": "date",
+            "Open Interest (All)": "open_interest",
+            "Noncommercial Positions-Long (All)": "managed_money_long",
+            "Noncommercial Positions-Short (All)": "managed_money_short",
+            "Commercial Positions-Long (All)": "producer_long",
+            "Commercial Positions-Short (All)": "producer_short",
         }
 
         # 尝试匹配列名（忽略大小写、空格）
@@ -95,9 +90,7 @@ def fetch_cot(year: int | None = None) -> pd.DataFrame:
         # 确保标准列存在
         std_cols = ["date", "exchange", "open_interest",
                     "producer_long", "producer_short",
-                    "swap_long", "swap_short",
-                    "managed_money_long", "managed_money_short",
-                    "other_long", "other_short"]
+                    "managed_money_long", "managed_money_short"]
         available = [c for c in std_cols if c in result.columns]
 
         result = result[available].copy()

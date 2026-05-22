@@ -871,25 +871,58 @@ function DebateCard() {
   const [data, setData] = useState<DebateResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [stageResults, setStageResults] = useState<Record<string, { label: string; color: string; result: unknown }>>({});
+  const [stageOrder] = useState(['bull', 'bear', 'audit', 'verdict']);
+  const esRef = useRef<EventSource | null>(null);
 
-  const run = async () => {
+  const run = useCallback(() => {
     setLoading(true);
     setError(null);
     setData(null);
-    try {
-      setData(await api.debate());
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Unknown error');
-    } finally {
-      setLoading(false);
-    }
-  };
+    setStageResults({});
 
-  const roleLabel: Record<string, string> = { bull: '看多方', bear: '看空方', audit: '数据审计', verdict: '最终裁决' };
-  const roleColor: Record<string, string> = { bull: '#22c55e', bear: 'var(--danger)', audit: '#3b82f6', verdict: 'var(--accent)' };
+    // Close previous connection
+    if (esRef.current) {
+      esRef.current.close();
+    }
+
+    const es = new EventSource(`${process.env.NEXT_PUBLIC_API_BASE || 'http://localhost:8000'}/api/debate/run/stream`);
+    esRef.current = es;
+
+    es.addEventListener('stage', (e: MessageEvent) => {
+      const payload = JSON.parse(e.data);
+      setStageResults(prev => ({
+        ...prev,
+        [payload.stage]: { label: payload.label, color: payload.color, result: payload.result },
+      }));
+    });
+
+    es.addEventListener('complete', (e: MessageEvent) => {
+      const payload = JSON.parse(e.data);
+      setData({ summary: payload.summary, detail: payload.detail });
+      es.close();
+      esRef.current = null;
+      setLoading(false);
+    });
+
+    es.addEventListener('error', (e: MessageEvent) => {
+      let msg = '辩论异常';
+      try { msg = JSON.parse(e.data).error; } catch { /* ignore */ }
+      setError(msg);
+      es.close();
+      esRef.current = null;
+      setLoading(false);
+    });
+  }, []);
+
+  // Cleanup on unmount
+  useEffect(() => () => { esRef.current?.close(); }, []);
+
+  const stageCompleted = (stage: string) => stage in stageResults || (data != null);
+  const stageIdx = (stage: string) => stageOrder.indexOf(stage);
 
   return (
-    <SectionCard title="辩论引擎" delay={330}>
+    <SectionCard title={<TitleWithHelp title="辩论引擎" help="4 个 AI 角色(看多/看空/数据审计/最终裁决)就黄金市场进行多轮辩论。每个阶段独立调用 LLM，结果实时展示。" />} delay={330}>
       <div className="flex items-center gap-3 mb-3">
         <button
           onClick={run}
@@ -898,36 +931,58 @@ function DebateCard() {
         >
           {loading ? '辩论进行中...' : '运行辩论'}
         </button>
-        {loading && (
-          <div className="flex items-center gap-1.5 text-sm muted-copy">
-            <span className="inline-block w-4 h-4 border-2 border-[var(--accent)] border-t-transparent rounded-full animate-spin" />
-            4 阶段进行中...
-          </div>
-        )}
       </div>
+
+      {/* 阶段进度条 */}
+      {loading && (
+        <div className="flex flex-wrap gap-2 mb-4">
+          {stageOrder.map((s, i) => {
+            const done = s in stageResults;
+            const current = !done && (i === 0 || stageOrder.slice(0, i).every(stageCompleted));
+            return (
+              <span
+                key={s}
+                className="data-pill text-xs flex items-center gap-1"
+                style={{
+                  borderColor: done ? stageResults[s].color : current ? 'var(--accent)' : 'var(--border)',
+                  opacity: done || current ? 1 : 0.4,
+                }}
+              >
+                {done ? '✓' : current ? (
+                  <span className="inline-block w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                ) : '⏳'}
+                {' '}{{ bull: '看多方', bear: '看空方', audit: '数据审计', verdict: '最终裁决' }[s]}
+              </span>
+            );
+          })}
+        </div>
+      )}
 
       {error && <p className="text-[var(--danger)] mb-3">{error}</p>}
 
+      {/* 阶段性结果实时展示 */}
+      {stageOrder.map(s => {
+        const sr = stageResults[s];
+        if (!sr) return null;
+        return (
+          <CollapseSection key={s} label={<span style={{ color: sr.color }}>{sr.label}</span>}>
+            <pre className="text-xs whitespace-pre-wrap leading-6">{JSON.stringify(sr.result, null, 2)}</pre>
+          </CollapseSection>
+        );
+      })}
+
+      {/* 完整结果 */}
       {data && (
-        <div className="space-y-2">
+        <div className="space-y-2 mt-3 border-t border-[var(--border)] pt-3">
           {data.summary && (
             <pre className="text-xs whitespace-pre-wrap text-[var(--muted)] leading-6 mb-3 p-3 rounded-xl bg-[rgba(255,253,247,0.4)] border border-[var(--border)]">
               {data.summary}
             </pre>
           )}
-          {Object.entries(roleLabel).map(([key, label]) => {
-            const roleData = data.detail[key as keyof typeof data.detail];
+          {stageOrder.map(s => {
+            const roleData = data.detail[s as keyof typeof data.detail];
             if (!roleData) return null;
-            return (
-              <CollapseSection
-                key={key}
-                label={
-                  <span style={{ color: roleColor[key] }}>{label}</span>
-                }
-              >
-                <pre className="text-xs whitespace-pre-wrap leading-6">{JSON.stringify(roleData, null, 2)}</pre>
-              </CollapseSection>
-            );
+            return null; // already shown above as stageResults
           })}
         </div>
       )}
@@ -957,7 +1012,7 @@ function BacktestCard({ refreshKey }: { refreshKey: number }) {
   };
 
   return (
-    <SectionCard title="回测" delay={370}>
+    <SectionCard title={<TitleWithHelp title="回测" help={EXTRA_HELP.backtest} />} delay={370}>
       <div className="flex flex-wrap items-center gap-2 mb-3">
         <select
           value={selectedStrategy}
@@ -1006,7 +1061,7 @@ function CentralBankCard({ refreshKey }: { refreshKey: number }) {
   const columns = ['country', 'date', 'gold_reserves_tonnes', 'rank'];
 
   return (
-    <SectionCard title="央行黄金储备" delay={410}>
+    <SectionCard title={<TitleWithHelp title="央行黄金储备" help={EXTRA_HELP.central_bank} />} delay={410}>
       <div className="flex flex-wrap gap-2 mb-3">
         <span className="data-pill">国家: {new Set(rows.map(r => r.country as string)).size}</span>
         <span className="data-pill">记录: {cb.records}</span>
@@ -1026,10 +1081,10 @@ function CotCard({ refreshKey }: { refreshKey: number }) {
 
   const cot = data.cot;
   const rows = cot.data as unknown as Record<string, unknown>[];
-  const columns = ['date', 'open_interest', 'managed_money_long', 'managed_money_short', 'producer_long', 'producer_short'];
+  const columns = ['date', 'exchange', 'open_interest', 'managed_money_long', 'managed_money_short', 'producer_long', 'producer_short'];
 
   return (
-    <SectionCard title="COT 持仓" delay={450}>
+    <SectionCard title={<TitleWithHelp title="COT 持仓" help={EXTRA_HELP.cot} />} delay={450}>
       <div className="flex flex-wrap gap-2 mb-3">
         <span className="data-pill">记录: {cot.records}</span>
         {cot._status === 'error' && <span className="data-pill text-[var(--danger)]">失败</span>}
@@ -1048,10 +1103,10 @@ function EtfFlowCard({ refreshKey }: { refreshKey: number }) {
 
   const etf = data.etf_flow;
   const rows = etf.data as unknown as Record<string, unknown>[];
-  const columns = ['date', 'fund_name', 'region', 'holdings_tonnes', 'flow_tonnes'];
+  const columns = ['date', 'fund_name', 'region', 'flow_usd', 'aum_usd'];
 
   return (
-    <SectionCard title="ETF 流量" delay={490}>
+    <SectionCard title={<TitleWithHelp title="ETF 流量" help={EXTRA_HELP.etf_flow} />} delay={490}>
       <div className="flex flex-wrap gap-2 mb-3">
         <span className="data-pill">记录: {etf.records}</span>
         {etf._status === 'error' && <span className="data-pill text-[var(--danger)]">失败</span>}
@@ -1073,7 +1128,7 @@ function GeopolCard({ refreshKey }: { refreshKey: number }) {
   const columns = ['date', 'gpr_index', 'gpr_threats', 'gpr_acts'].filter(c => rows.some(r => r[c] != null));
 
   return (
-    <SectionCard title="地缘政治风险" delay={530}>
+    <SectionCard title={<TitleWithHelp title="地缘政治风险" help={EXTRA_HELP.geopol} />} delay={530}>
       <div className="flex flex-wrap gap-2 mb-3">
         <span className="data-pill">记录: {gp.records}</span>
         {gp._status === 'error' && <span className="data-pill text-[var(--danger)]">失败</span>}
@@ -1092,10 +1147,10 @@ function FedWatchCard({ refreshKey }: { refreshKey: number }) {
 
   const fw = data.fedwatch;
   const rows = fw.data as unknown as Record<string, unknown>[];
-  const latest = rows[rows.length - 1];
+  const latest = rows[0];
 
   return (
-    <SectionCard title="FedWatch 利率预期" delay={570}>
+    <SectionCard title={<TitleWithHelp title="FedWatch 利率预期" help={EXTRA_HELP.fedwatch} />} delay={570}>
       <div className="flex flex-wrap gap-2 mb-3">
         <span className="data-pill">会议: {rows.length}</span>
         {fw._status === 'error' && <span className="data-pill text-[var(--danger)]">失败</span>}
@@ -1129,7 +1184,7 @@ function ChinaMacroCard({ refreshKey }: { refreshKey: number }) {
   const rows = (current?.data || []) as unknown as Record<string, unknown>[];
 
   return (
-    <SectionCard title="中国宏观数据" delay={610}>
+    <SectionCard title={<TitleWithHelp title="中国宏观数据" help={EXTRA_HELP.china_macro} />} delay={610}>
       <div className="flex flex-wrap gap-2 mb-3">
         {indicators.map(ind => (
           <button
@@ -1159,7 +1214,7 @@ function AiscCard({ refreshKey }: { refreshKey: number }) {
   const latest = rows[rows.length - 1];
 
   return (
-    <SectionCard title="生产成本 AISC" delay={650}>
+    <SectionCard title={<TitleWithHelp title="生产成本 AISC" help={EXTRA_HELP.aisc} />} delay={650}>
       <div className="flex flex-wrap gap-2 mb-3">
         <span className="data-pill">记录: {aisc.records}</span>
         {aisc._status === 'error' && <span className="data-pill text-[var(--danger)]">失败</span>}
@@ -1189,7 +1244,7 @@ function CalendarCard({ refreshKey }: { refreshKey: number }) {
   const nextEvent = data.next_event;
 
   return (
-    <SectionCard title="财经日历" delay={680} className="xl:col-span-1">
+    <SectionCard title={<TitleWithHelp title="财经日历" help={EXTRA_HELP.calendar} />} delay={680} className="xl:col-span-1">
       {nextEvent && (
         <div
           className="rounded-lg p-4 mb-4 border-l-4"
@@ -1226,6 +1281,31 @@ const SUB_TAB_HELP: Record<string, string> = {
 
 const PREDICTION_HELP =
   '基于 Prophet 模型的时序预测: 蓝线为历史收盘价，金线为预测中值，金色阴影为 95% 置信区间。预测仅作为趋势参考，不构成投资建议。';
+
+const EXTRA_HELP: Record<string, string> = {
+  central_bank: '各国央行官方黄金储备量（吨），数据来源 IMF IFS / WGC。排名靠前的国家包括美国(8133t)、德国(3352t)、IMF(2814t)等。',
+  cot: 'CFTC 持仓报告: Managed Money(投机)多头/空头 vs Producer(套保)多头/空头，反映市场情绪和持仓结构。',
+  etf_flow: '黄金 ETF 资金流量: 美元计价的每日流入/流出和总资产管理规模(AUM)。正流量代表资金流入。',
+  geopol: '地缘政治风险指数(GPR): 基于报纸文章中地缘政治风险关键词频度统计。>200 表示高风险时期。',
+  aisc: '全球黄金生产全维持成本(AISC): 包含采矿、加工、管理费用及维持资本。当前约 $1,270-1,385/oz。',
+  calendar: '重要财经事件日历: 包括美联储利率决议、非农就业、CPI 等对金价有重大影响的数据发布。',
+  fedwatch: 'CME FedWatch 工具: 基于联邦基金利率期货的 FOMC 会议加息/降息概率预测。',
+  china_macro: '中国经济指标: CPI(通胀)、PPI(工业品价格)、PMI(制造业景气度)、M2(货币供应)、GDP(经济增长)、LPR(基准利率)、USD/CNY(汇率)。',
+  backtest: '用历史数据模拟交易策略表现。当前策略 golden_cross(金叉): 短期均线(MA20)上穿长期均线(MA50)买入，下穿卖出。结果仅供参考，不构成投资建议。',
+};
+
+function TitleWithHelp({ title, help }: { title: string; help?: string }) {
+  if (!help) return <>{title}</>;
+  return (
+    <span className="flex items-center gap-1.5">
+      {title}
+      <span className="relative group">
+        <span className="inline-flex items-center justify-center w-3.5 h-3.5 rounded-full border border-[var(--muted)] text-[10px] cursor-help text-[var(--muted)] leading-none">?</span>
+        <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 rounded-lg text-xs whitespace-nowrap bg-[var(--foreground)] text-[var(--background)] opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-50 shadow-lg">{help}</span>
+      </span>
+    </span>
+  );
+}
 
 const REFRESH_OPTIONS = [
   { label: '关闭', value: 0 },
@@ -1444,7 +1524,6 @@ export default function DashboardPage() {
               {isVis('宏观数据') && <MacroCard refreshKey={refreshKey} />}
               {isVis('FedWatch') && <FedWatchCard refreshKey={refreshKey} />}
               {isVis('中国宏观') && <ChinaMacroCard refreshKey={refreshKey} />}
-              {isVis('新闻情绪') && <NewsCard refreshKey={refreshKey} />}
             </>
           )}
 
@@ -1468,7 +1547,11 @@ export default function DashboardPage() {
                   <DebateCard />
                 </div>
               )}
-              {isVis('回测') && <BacktestCard refreshKey={refreshKey} />}
+              {isVis('回测') && (
+                <div className="md:col-span-2 xl:col-span-3">
+                  <BacktestCard refreshKey={refreshKey} />
+                </div>
+              )}
             </>
           )}
         </div>

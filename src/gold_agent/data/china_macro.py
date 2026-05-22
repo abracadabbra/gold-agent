@@ -52,7 +52,18 @@ def _fetch_akshare(func_path: str, indicator: str) -> pd.DataFrame:
         value_cols = [c for c in df.columns if c not in date_cols]
 
         if date_cols:
-            df["date"] = pd.to_datetime(df[date_cols[0]], errors="coerce", format="mixed")
+            # Normalize Chinese date formats: "2026年04月份" → "2026-04-01"
+            def _normalize_date(val: str) -> str:
+                val = val.replace("年", "-").replace("月份", "-01").replace("月", "-01")
+                import re
+                m = re.search(r"第(\d+)季度", val)
+                if m:
+                    q = int(m.group(1))
+                    month = str((q - 1) * 3 + 1).zfill(2)
+                    val = re.sub(r"第\d+季度", f"{month}", val)
+                return val
+            norm = df[date_cols[0]].astype(str).apply(_normalize_date)
+            df["date"] = pd.to_datetime(norm, errors="coerce", format="mixed")
             # 保留第一个数值列作为 value
             skip_labels = {"date", "日期", "时间", "指标名称", "指标"}
             numeric_cols = [c for c in value_cols if c.lower() not in skip_labels]  # noqa: E501
