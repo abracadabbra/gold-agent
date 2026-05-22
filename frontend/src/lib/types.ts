@@ -68,6 +68,7 @@ export interface NewsItem {
   title: string;
   link?: string;
   source?: string;
+  published?: string;
   published_date?: string;
   sentiment_score: number;
   sentiment_label: string;
