@@ -9,7 +9,7 @@ logger = logging.getLogger(__name__)
 
 
 # 国内新闻源名列表（前端用此区分国内/国外）
-DOMESTIC_SOURCES = ["hexun_gold", "eastmoney", "google_news_cn"]
+DOMESTIC_SOURCES = ["chinanews", "eastmoney", "google_news_cn"]
 
 # 黄金相关 RSS 源
 RSS_FEEDS = {
@@ -17,7 +17,7 @@ RSS_FEEDS = {
     "google_news_cn": "https://news.google.com/rss/search?q=黄金+价格&hl=zh-CN&gl=CN&ceid=CN:zh-Hans",
     "google_reuters": "https://news.google.com/rss/search?q=site:reuters.com+gold&hl=en-US",
     "mining_com": "https://www.mining.com/feed",
-    "hexun_gold": "https://news.hexun.com/rss/gold.xml",
+    "chinanews": "https://www.chinanews.com.cn/rss/finance.xml",
     "eastmoney": "http://rss.eastmoney.com/rss_partener.xml",
 }
 

@@ -304,7 +304,7 @@ export default function Home() {
       }
 
       // ── news ──
-      const DOMESTIC_SOURCES = ['hexun_gold', 'eastmoney', 'google_news_cn'];
+      const DOMESTIC_SOURCES = ['chinanews', 'eastmoney', 'google_news_cn'];
       if (newsRes.status === 'fulfilled') {
         const n = newsRes.value;
         for (const item of n.news) {
