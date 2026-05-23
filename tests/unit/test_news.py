@@ -5,7 +5,12 @@ from unittest.mock import MagicMock, patch
 import pandas as pd
 import pytest
 
-from gold_agent.data.news import analyze_sentiment, fetch_news_with_sentiment, fetch_rss_news
+from gold_agent.data.news import (
+    RSS_FEEDS,
+    analyze_sentiment,
+    fetch_news_with_sentiment,
+    fetch_rss_news,
+)
 
 
 class TestAnalyzeSentiment:
@@ -98,6 +103,7 @@ class TestFetchRssNews:
 
         with patch("httpx.get") as mock_get:
             mock_response = MagicMock()
+            mock_response.content = xml.encode("utf-8")
             mock_response.text = xml
             mock_get.return_value = mock_response
 
@@ -118,6 +124,7 @@ class TestFetchRssNews:
 
         with patch("httpx.get") as mock_get:
             mock_response = MagicMock()
+            mock_response.content = xml.encode("utf-8")
             mock_response.text = xml
             mock_get.return_value = mock_response
 
@@ -149,6 +156,7 @@ class TestFetchRssNews:
 
         with patch("httpx.get") as mock_get:
             mock_response = MagicMock()
+            mock_response.content = xml.encode("utf-8")
             mock_response.text = xml
             mock_get.return_value = mock_response
 
@@ -167,6 +175,7 @@ class TestFetchRssNews:
 
         with patch("httpx.get") as mock_get:
             mock_response = MagicMock()
+            mock_response.content = xml.encode("utf-8")
             mock_response.text = xml
             mock_get.return_value = mock_response
 
@@ -197,8 +206,7 @@ class TestFetchNewsWithSentiment:
                              "sentiment_score", "sentiment_label",
                              "bull_hits", "bear_hits"}
             assert expected_cols.issubset(set(result.columns))
-            # 3 个 RSS 源各调一次 mock，所以 2×3 = 6 条
-            assert len(result) == 6
+            assert len(result) == len(RSS_FEEDS) * 2
 
     def test_all_feeds_fail_returns_minimal_df(self):
         """所有 RSS 源失败时返回最小 DataFrame"""
@@ -228,6 +236,5 @@ class TestFetchNewsWithSentiment:
             result = fetch_news_with_sentiment()
 
             # 第一条应该是 bullish (rally safe haven), 最后一条 bearish (rate hike selloff)
-            # 3 个 RSS 源各调一次 mock，所以 2×3 = 6 条
-            assert len(result) == 6
+            assert len(result) == len(RSS_FEEDS) * 2
             assert result["sentiment_score"].iloc[0] > result["sentiment_score"].iloc[-1]

@@ -8,12 +8,17 @@ import logging
 logger = logging.getLogger(__name__)
 
 
+# 国内新闻源名列表（前端用此区分国内/国外）
+DOMESTIC_SOURCES = ["hexun_gold", "eastmoney", "google_news_cn"]
+
 # 黄金相关 RSS 源
 RSS_FEEDS = {
     "google_news": "https://news.google.com/rss/search?q=gold+price&hl=en-US&gl=US&ceid=US:en",
     "google_news_cn": "https://news.google.com/rss/search?q=黄金+价格&hl=zh-CN&gl=CN&ceid=CN:zh-Hans",
     "google_reuters": "https://news.google.com/rss/search?q=site:reuters.com+gold&hl=en-US",
     "mining_com": "https://www.mining.com/feed",
+    "hexun_gold": "https://news.hexun.com/rss/gold.xml",
+    "eastmoney": "http://rss.eastmoney.com/rss_partener.xml",
 }
 
 # 情绪关键词
@@ -52,9 +57,15 @@ def fetch_rss_news(feed_name: str = "google_news", max_items: int = 20) -> list[
         logger.error(f"RSS 请求失败: {e}")
         return []
 
+    # 检测 XML 编码（处理 GBK 等非 UTF-8 源）
+    raw = resp.content
+    enc_match = re.search(rb'encoding=["\']([^"\']+)["\']', raw[:500])
+    encoding = enc_match.group(1).decode("ascii", errors="ignore") if enc_match else "utf-8"
+    xml_text = raw.decode(encoding, errors="replace")
+
     # 简单 XML 解析 (避免引入 lxml 依赖)
     items = []
-    entries = re.findall(r"<item>(.*?)</item>", resp.text, re.DOTALL)
+    entries = re.findall(r"<item>(.*?)</item>", xml_text, re.DOTALL)
 
     for entry in entries[:max_items]:
         title = re.search(r"<title>(.*?)</title>", entry, re.DOTALL)

@@ -304,11 +304,12 @@ export default function Home() {
       }
 
       // ── news ──
+      const DOMESTIC_SOURCES = ['hexun_gold', 'eastmoney', 'google_news_cn'];
       if (newsRes.status === 'fulfilled') {
         const n = newsRes.value;
         for (const item of n.news) {
           const entry = { title: item.title, date: item.published || item.published_date || '', link: item.link };
-          if (item.source === 'google_news_cn') cnSamples.push(entry);
+          if (DOMESTIC_SOURCES.includes(item.source)) cnSamples.push(entry);
           else enSamples.push(entry);
         }
         cnNews = cnSamples.slice(0, 3).map(x => ({ title: x.title, link: x.link }));

@@ -67,6 +67,16 @@ api/*.py:     GET /api/... -> calls cache.get() -> returns JSON
 frontend:     api.xxx() -> renders card
 ```
 
+### Domestic Source Whitelist (Cross-Layer Contract)
+
+The `DOMESTIC_SOURCES` list in `news.py` and the `DOMESTIC_SOURCES` array in `page.tsx` must be kept in sync. When adding a new domestic RSS feed:
+
+1. Add the feed to `RSS_FEEDS` in `news.py` with a domestic source name
+2. Add that source name to `DOMESTIC_SOURCES` in `news.py`
+3. Add the same source name to `DOMESTIC_SOURCES` in `frontend/src/app/page.tsx`
+
+The frontend uses this whitelist to split news into domestic/foreign display sections.
+
 ### Per-Source Fault Isolation
 
 In API endpoints that aggregate multiple data sources, each source must be wrapped in its own try/except:
