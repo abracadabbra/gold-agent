@@ -8,8 +8,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 11
-- **Last Active**: 2026-05-21
+- **Total Sessions**: 12
+- **Last Active**: 2026-05-23
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~375 | Active |
+| `journal-1.md` | ~409 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 12 | 2026-05-23 | 扩充国内新闻数据源 | `596f031`, `5b37066` | `master` |
 | 11 | 2026-05-21 | Dashboard market data display overhaul | `be502b4` | `master` |
 | 10 | 2026-05-21 | Phase C 质量提升 | `98949d7` | `master` |
 | 9 | 2026-05-21 | Phase B 数据增强 | `ed69632` | `master` |

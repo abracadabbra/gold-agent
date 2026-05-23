@@ -373,3 +373,37 @@ Replaced Recharts chart with lightweight-charts K-line with MA overlays/volume h
 ### Next Steps
 
 - None - task complete
+
+
+## Session 12: 扩充国内新闻数据源
+
+**Date**: 2026-05-23
+**Task**: 扩充国内新闻数据源
+**Branch**: `master`
+
+### Summary
+
+新增 chinanews + eastmoney RSS 源，替换不可用的 hexun；修复 Parquet 缓存路径错误导致数据不生效的问题；前端用白名单区分国内/国外新闻源；同步更新 spec 文档
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `596f031` | (see git log) |
+| `5b37066` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
