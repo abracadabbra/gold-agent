@@ -1290,9 +1290,9 @@ export default function DashboardPage() {
             <>
               {isVis('行情图') && <PriceChartCard refreshKey={fastRefreshKey} />}
               {(isVis('交易信号') || isVis('新闻情绪')) && (
-                <div className="md:col-span-2 xl:col-span-3 flex gap-4">
-                  <div className="flex-1 min-w-0">{isVis('交易信号') && <SignalGaugeCard refreshKey={fastRefreshKey} />}</div>
-                  <div className="flex-1 min-w-0">{isVis('新闻情绪') && <NewsCard refreshKey={newsRefreshKey} />}</div>
+                <div className="md:col-span-2 xl:col-span-3 flex gap-4 items-stretch">
+                  <div className="flex-1 min-w-0 flex flex-col">{isVis('交易信号') && <SignalGaugeCard refreshKey={fastRefreshKey} />}</div>
+                  <div className="flex-1 min-w-0 flex flex-col">{isVis('新闻情绪') && <NewsCard refreshKey={newsRefreshKey} />}</div>
                 </div>
               )}
               {isVis('价格预测') && (

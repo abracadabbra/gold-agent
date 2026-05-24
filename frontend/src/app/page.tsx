@@ -344,7 +344,7 @@ export default function Home() {
 
       // ── reference groups (dynamic titles from actual data) ──
       const refs: { title: string; links: string[] }[] = [];
-      refs.push({ title: kline || '实时行情', links: SRC_LINKS.technical });
+      refs.push({ title: '多周期 K 线快照', links: SRC_LINKS.technical });
       if (macItems.length > 0) {
         refs.push({ title: macItems.slice(0, 2).join('；'), links: SRC_LINKS.macro_yield });
         const rest = macItems.slice(2).join('；');

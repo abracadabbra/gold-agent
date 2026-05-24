@@ -14,11 +14,11 @@ export function SectionCard({
 }) {
   return (
     <section
-      className={`paper-card reveal-card p-5 md:p-6 ${className}`}
+      className={`paper-card reveal-card p-5 md:p-6 h-full flex flex-col ${className}`}
       style={{ animationDelay: `${delay}ms` }}
     >
       <h2 className="section-title">{title}</h2>
-      <div className="mt-4 text-[15px] leading-8 text-[var(--foreground)]">{children}</div>
+      <div className="mt-4 text-[15px] leading-8 text-[var(--foreground)] flex-1">{children}</div>
     </section>
   );
 }
