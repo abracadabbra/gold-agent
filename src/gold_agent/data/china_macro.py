@@ -1,5 +1,6 @@
 """中国宏观经济数据 — akshare"""
 
+import re
 import logging
 
 import pandas as pd
@@ -16,82 +17,91 @@ _INDICATOR_MAP = {
     "usd_cny": ("ak.fx_spot_quote", "离岸/在岸人民币汇率"),
 }
 
+# akshare 函数名 → 调用映射
+_AK_FUNC_MAP: dict[str, str] = {
+    "ak.macro_china_cpi": "macro_china_cpi",
+    "ak.macro_china_ppi": "macro_china_ppi",
+    "ak.macro_china_pmi": "macro_china_pmi",
+    "ak.macro_china_money_supply": "macro_china_money_supply",
+    "ak.macro_china_gdp": "macro_china_gdp",
+    "ak.macro_china_lpr": "macro_china_lpr",
+    "ak.fx_spot_quote": "fx_spot_quote",
+}
+
+
+def _normalize_date(val: str) -> str:
+    """标准化中文日期格式: '2026年04月份' → '2026-04-01'"""
+    val = val.replace("年", "-").replace("月份", "-01").replace("月", "-01")
+    m = re.search(r"第(\d+)季度", val)
+    if m:
+        q = int(m.group(1))
+        month = str((q - 1) * 3 + 1).zfill(2)
+        val = re.sub(r"第\d+季度", f"{month}", val)
+    return val
+
+
+def _extract_date_and_value(df: pd.DataFrame) -> pd.DataFrame:
+    """从 DataFrame 中提取 date 和 value 列"""
+    date_keywords = {"date", "时间", "指标", "年份", "季度", "月份", "日期"}
+    date_cols = [c for c in df.columns if any(k in c.lower() or k in c for k in date_keywords)]
+    value_cols = [c for c in df.columns if c not in date_cols]
+
+    if date_cols:
+        norm = df[date_cols[0]].astype(str).apply(_normalize_date)
+        df["date"] = pd.to_datetime(norm, errors="coerce", format="mixed")
+        skip_labels = {"date", "日期", "时间", "指标名称", "指标"}
+        numeric_cols = [c for c in value_cols if c.lower() not in skip_labels]
+        if numeric_cols:
+            df["value"] = pd.to_numeric(df[numeric_cols[0]], errors="coerce")
+            return df[["date", "value"]].dropna(subset=["date"]).copy()
+        result = df[["date"]].copy()
+        result["value"] = None
+        return result
+
+    # 尝试用 index 作为日期
+    if isinstance(df.index, pd.DatetimeIndex | pd.PeriodIndex):
+        df = df.reset_index()
+        df = df.rename(columns={"index": "date"})
+        df["date"] = pd.to_datetime(df["date"], errors="coerce", format="mixed")
+        numeric_cols = [
+            c for c in df.columns
+            if c != "date" and pd.api.types.is_numeric_dtype(df[c])
+        ]
+        if numeric_cols:
+            val_col = numeric_cols[0]
+            return df[["date", val_col]].rename(columns={val_col: "value"}).copy()
+        result = df[["date"]].copy()
+        result["value"] = None
+        return result
+
+    return pd.DataFrame()
+
 
 def _fetch_akshare(func_path: str, indicator: str) -> pd.DataFrame:
     """调用 akshare 函数并标准化"""
     try:
         import akshare as ak
 
-        # 按函数名调用
-        if func_path == "ak.macro_china_cpi":
-            df = ak.macro_china_cpi()
-        elif func_path == "ak.macro_china_ppi":
-            df = ak.macro_china_ppi()
-        elif func_path == "ak.macro_china_pmi":
-            df = ak.macro_china_pmi()
-        elif func_path == "ak.macro_china_money_supply":
-            df = ak.macro_china_money_supply()
-        elif func_path == "ak.macro_china_gdp":
-            df = ak.macro_china_gdp()
-        elif func_path == "ak.macro_china_lpr":
-            df = ak.macro_china_lpr()
-        elif func_path == "ak.fx_spot_quote":
-            df = ak.fx_spot_quote()
-        else:
+        func_name = _AK_FUNC_MAP.get(func_path)
+        if func_name is None:
             logger.warning(f"[china_macro] 未知函数: {func_path}")
             return pd.DataFrame()
+
+        func = getattr(ak, func_name, None)
+        if func is None:
+            logger.warning(f"[china_macro] akshare 无此函数: {func_name}")
+            return pd.DataFrame()
+
+        df = func()
 
         if df.empty:
             logger.warning(f"[china_macro] {indicator}: 返回空")
             return pd.DataFrame()
 
-        # 标准化 — 找日期列和数值列
-        df = df.copy()
-        date_keywords = {"date", "时间", "指标", "年份", "季度", "月份", "日期"}
-        date_cols = [c for c in df.columns if any(k in c.lower() or k in c for k in date_keywords)]  # noqa: E501
-        value_cols = [c for c in df.columns if c not in date_cols]
-
-        if date_cols:
-            # Normalize Chinese date formats: "2026年04月份" → "2026-04-01"
-            def _normalize_date(val: str) -> str:
-                val = val.replace("年", "-").replace("月份", "-01").replace("月", "-01")
-                import re
-                m = re.search(r"第(\d+)季度", val)
-                if m:
-                    q = int(m.group(1))
-                    month = str((q - 1) * 3 + 1).zfill(2)
-                    val = re.sub(r"第\d+季度", f"{month}", val)
-                return val
-            norm = df[date_cols[0]].astype(str).apply(_normalize_date)
-            df["date"] = pd.to_datetime(norm, errors="coerce", format="mixed")
-            # 保留第一个数值列作为 value
-            skip_labels = {"date", "日期", "时间", "指标名称", "指标"}
-            numeric_cols = [c for c in value_cols if c.lower() not in skip_labels]  # noqa: E501
-            if numeric_cols:
-                df["value"] = pd.to_numeric(df[numeric_cols[0]], errors="coerce")
-                result = df[["date", "value"]].dropna(subset=["date"]).copy()
-            else:
-                result = df[["date"]].copy()
-                result["value"] = None
-        else:
-            # 尝试用 index 作为日期
-            if isinstance(df.index, pd.DatetimeIndex | pd.PeriodIndex):
-                df = df.reset_index()
-                df = df.rename(columns={"index": "date"})
-                df["date"] = pd.to_datetime(df["date"], errors="coerce", format="mixed")
-                numeric_cols = [
-                    c for c in df.columns
-                    if c != "date" and pd.api.types.is_numeric_dtype(df[c])
-                ]
-                if numeric_cols:
-                    val_col = numeric_cols[0]
-                    result = df[["date", val_col]].rename(columns={val_col: "value"}).copy()  # noqa: E501
-                else:
-                    result = df[["date"]].copy()
-                    result["value"] = None
-            else:
-                logger.warning(f"[china_macro] {indicator}: 无法解析日期列")
-                return pd.DataFrame()
+        result = _extract_date_and_value(df.copy())
+        if result.empty:
+            logger.warning(f"[china_macro] {indicator}: 无法解析日期列")
+            return result
 
         result = result.dropna(subset=["date"]).sort_values("date").reset_index(drop=True)
         logger.info(f"[china_macro] {indicator}: {len(result)} 行")
@@ -140,7 +150,6 @@ def fetch_china_fx() -> pd.DataFrame:
         if df.empty:
             return pd.DataFrame()
 
-        # 筛选 USD/CNY 并添加日期
         cny = df[df["货币对"] == "USD/CNY"].copy()
         if cny.empty:
             cny = df.iloc[[0]].copy()
@@ -158,7 +167,6 @@ def fetch_china_fx() -> pd.DataFrame:
 
 def fetch_all_china_macro() -> dict[str, pd.DataFrame]:
     """一次获取所有中国宏观指标"""
-    # cache 按单 key 缓存，因此这里汇集所有，但 cache.get 会分散调用
     return {
         "cpi": fetch_china_cpi(),
         "ppi": fetch_china_ppi(),

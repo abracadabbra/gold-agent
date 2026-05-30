@@ -1,16 +1,12 @@
 """分析接口 — 金价数据 + 技术指标 + 信号"""
 
-from typing import Any
-
 import pandas as pd
 from fastapi import APIRouter, HTTPException, Query
 import logging
 logger = logging.getLogger(__name__)
 
 
-def _json_safe(df: pd.DataFrame) -> list[dict[str, Any]]:
-    """将 DataFrame 转为 JSON-safe 字典列表"""
-    return df.where(df.notna(), None).astype(object).where(df.notna(), None).to_dict(orient="records")  # noqa: E501
+from gold_agent.utils.json import json_safe as _json_safe
 
 from gold_agent.data.gold_price import fetch_gold_price
 from gold_agent.data.macro import fetch_macro_yfinance, fetch_macro_fred

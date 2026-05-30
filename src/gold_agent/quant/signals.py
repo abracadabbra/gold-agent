@@ -39,6 +39,133 @@ class TradeSignal:
         }
 
 
+def _score_ma_cross(latest: dict) -> tuple[float, list[str]]:
+    """MA 交叉评分 (±20)"""
+    score = 0.0
+    reasons = []
+
+    if "ma5" in latest and "ma20" in latest:
+        ma5, ma20 = latest["ma5"], latest["ma20"]
+        if ma5 > ma20:
+            score += 20
+            reasons.append(f"MA5({ma5:.2f}) > MA20({ma20:.2f})，短期均线多头排列")
+        else:
+            score -= 20
+            reasons.append(f"MA5({ma5:.2f}) < MA20({ma20:.2f})，短期均线空头排列")
+
+    if "ma20" in latest and "ma60" in latest:
+        ma20, ma60 = latest["ma20"], latest["ma60"]
+        if ma20 > ma60:
+            score += 10
+            reasons.append(f"MA20({ma20:.2f}) > MA60({ma60:.2f})，中期趋势向上")
+        else:
+            score -= 10
+            reasons.append(f"MA20({ma20:.2f}) < MA60({ma60:.2f})，中期趋势向下")
+
+    return score, reasons
+
+
+def _score_rsi(latest: dict) -> tuple[float, list[str]]:
+    """RSI 评分 (±15)"""
+    if "rsi14" not in latest:
+        return 0.0, []
+
+    rsi = latest["rsi14"]
+    if rsi < 30:
+        return 15.0, [f"RSI={rsi:.1f}，超卖区域，可能反弹"]
+    if rsi < 40:
+        return 8.0, [f"RSI={rsi:.1f}，接近超卖"]
+    if rsi > 70:
+        return -15.0, [f"RSI={rsi:.1f}，超买区域，可能回调"]
+    if rsi > 60:
+        return -8.0, [f"RSI={rsi:.1f}，接近超买"]
+    return 0.0, [f"RSI={rsi:.1f}，中性区域"]
+
+
+def _score_macd(latest: dict) -> tuple[float, list[str]]:
+    """MACD 评分 (±15)"""
+    if "macd_line" not in latest or "macd_signal" not in latest:
+        return 0.0, []
+
+    macd, signal = latest["macd_line"], latest["macd_signal"]
+    hist = latest.get("macd_hist", 0)
+    score = 0.0
+    reasons = []
+
+    if macd > signal:
+        score += 15
+        reasons.append(f"MACD({macd:.4f}) > 信号线({signal:.4f})，多头动能")
+    else:
+        score -= 15
+        reasons.append(f"MACD({macd:.4f}) < 信号线({signal:.4f})，空头动能")
+
+    if hist > 0 and hist > latest.get("macd_hist_prev", 0):
+        score += 5
+        reasons.append("MACD 柱状图放大，动能增强")
+
+    return score, reasons
+
+
+def _score_bollinger(latest: dict, price: float) -> tuple[float, list[str]]:
+    """布林带评分 (±10)"""
+    if "bb_upper" not in latest or "bb_lower" not in latest:
+        return 0.0, []
+
+    bb_upper, bb_lower = latest["bb_upper"], latest["bb_lower"]
+    if price < bb_lower:
+        return 10.0, [f"价格(${price:.2f}) < 布林下轨(${bb_lower:.2f})，可能超卖反弹"]
+    if price > bb_upper:
+        return -10.0, [f"价格(${price:.2f}) > 布林上轨(${bb_upper:.2f})，可能超买回调"]
+
+    pos = (price - bb_lower) / (bb_upper - bb_lower) * 100
+    return 0.0, [f"布林带位置: {pos:.0f}%"]
+
+
+def _score_supertrend(latest: dict) -> tuple[float, list[str]]:
+    """Supertrend 评分 (±20)"""
+    if "supertrend_dir" not in latest:
+        return 0.0, []
+
+    direction = latest["supertrend_dir"]
+    st_val = latest.get("supertrend", 0)
+    if direction > 0:
+        return 20.0, [f"Supertrend(${st_val:.2f}) 看多信号 🟢"]
+    return -20.0, [f"Supertrend(${st_val:.2f}) 看空信号 🔴"]
+
+
+def _score_adx(latest: dict, score: float) -> tuple[float, list[str]]:
+    """ADX 趋势强度评分 (±10)"""
+    if "adx" not in latest:
+        return 0.0, []
+
+    adx = latest["adx"]
+    if adx > 25:
+        if score > 0:
+            return 10.0, [f"ADX={adx:.1f}，强上升趋势确认"]
+        return -10.0, [f"ADX={adx:.1f}，强下降趋势确认"]
+    return 0.0, [f"ADX={adx:.1f}，趋势较弱/震荡市"]
+
+
+def _classify_signal(score: float) -> Signal:
+    """根据分数分类信号"""
+    if score >= 50:
+        return Signal.STRONG_BUY
+    if score >= 20:
+        return Signal.BUY
+    if score <= -50:
+        return Signal.STRONG_SELL
+    if score <= -20:
+        return Signal.SELL
+    return Signal.NEUTRAL
+
+
+def _calc_stop_take_profit(price: float, atr: float, bullish: bool) -> tuple[float, float]:
+    """计算止损止盈"""
+    if bullish:
+        return round(price - 2 * atr, 2), round(price + 3 * atr, 2)
+    return round(price + 2 * atr, 2), round(price - 3 * atr, 2)
+
+
 def generate_signal(df: pd.DataFrame) -> TradeSignal:
     """
     综合多个技术指标生成交易信号
@@ -65,122 +192,29 @@ def generate_signal(df: pd.DataFrame) -> TradeSignal:
     score = 0.0
     reasons = []
 
-    # ---- MA 交叉 (±20) ----
-    if "ma5" in latest and "ma20" in latest:
-        ma5, ma20 = latest["ma5"], latest["ma20"]
-        if ma5 > ma20:
-            score += 20
-            reasons.append(f"MA5({ma5:.2f}) > MA20({ma20:.2f})，短期均线多头排列")
-        else:
-            score -= 20
-            reasons.append(f"MA5({ma5:.2f}) < MA20({ma20:.2f})，短期均线空头排列")
+    for scorer in [_score_ma_cross, _score_rsi, _score_macd]:
+        s, r = scorer(latest)
+        score += s
+        reasons.extend(r)
 
-    if "ma20" in latest and "ma60" in latest:
-        ma20, ma60 = latest["ma20"], latest["ma60"]
-        if ma20 > ma60:
-            score += 10
-            reasons.append(f"MA20({ma20:.2f}) > MA60({ma60:.2f})，中期趋势向上")
-        else:
-            score -= 10
-            reasons.append(f"MA20({ma20:.2f}) < MA60({ma60:.2f})，中期趋势向下")
+    s, r = _score_bollinger(latest, price)
+    score += s
+    reasons.extend(r)
 
-    # ---- RSI (±15) ----
-    if "rsi14" in latest:
-        rsi = latest["rsi14"]
-        if rsi < 30:
-            score += 15
-            reasons.append(f"RSI={rsi:.1f}，超卖区域，可能反弹")
-        elif rsi < 40:
-            score += 8
-            reasons.append(f"RSI={rsi:.1f}，接近超卖")
-        elif rsi > 70:
-            score -= 15
-            reasons.append(f"RSI={rsi:.1f}，超买区域，可能回调")
-        elif rsi > 60:
-            score -= 8
-            reasons.append(f"RSI={rsi:.1f}，接近超买")
-        else:
-            reasons.append(f"RSI={rsi:.1f}，中性区域")
+    s, r = _score_supertrend(latest)
+    score += s
+    reasons.extend(r)
 
-    # ---- MACD (±15) ----
-    if "macd_line" in latest and "macd_signal" in latest:
-        macd, signal = latest["macd_line"], latest["macd_signal"]
-        hist = latest.get("macd_hist", 0)
-        if macd > signal:
-            score += 15
-            reasons.append(f"MACD({macd:.4f}) > 信号线({signal:.4f})，多头动能")
-        else:
-            score -= 15
-            reasons.append(f"MACD({macd:.4f}) < 信号线({signal:.4f})，空头动能")
+    s, r = _score_adx(latest, score)
+    score += s
+    reasons.extend(r)
 
-        if hist > 0 and hist > latest.get("macd_hist_prev", 0):
-            score += 5
-            reasons.append("MACD 柱状图放大，动能增强")
-
-    # ---- 布林带 (±10) ----
-    if "bb_upper" in latest and "bb_lower" in latest:
-        bb_upper, bb_lower, _ = latest["bb_upper"], latest["bb_lower"], latest["bb_mid"]
-        if price < bb_lower:
-            score += 10
-            reasons.append(f"价格(${price:.2f}) < 布林下轨(${bb_lower:.2f})，可能超卖反弹")
-        elif price > bb_upper:
-            score -= 10
-            reasons.append(f"价格(${price:.2f}) > 布林上轨(${bb_upper:.2f})，可能超买回调")
-        else:
-            pos = (price - bb_lower) / (bb_upper - bb_lower) * 100
-            reasons.append(f"布林带位置: {pos:.0f}%")
-
-    # ---- Supertrend (±20) ----
-    if "supertrend_dir" in latest:
-        direction = latest["supertrend_dir"]
-        st_val = latest.get("supertrend", 0)
-        if direction > 0:
-            score += 20
-            reasons.append(f"Supertrend(${st_val:.2f}) 看多信号 🟢")
-        else:
-            score -= 20
-            reasons.append(f"Supertrend(${st_val:.2f}) 看空信号 🔴")
-
-    # ---- ADX (±10) ----
-    if "adx" in latest:
-        adx = latest["adx"]
-        if adx > 25:
-            # 强趋势，加分给当前方向
-            if score > 0:
-                score += 10
-                reasons.append(f"ADX={adx:.1f}，强上升趋势确认")
-            else:
-                score -= 10
-                reasons.append(f"ADX={adx:.1f}，强下降趋势确认")
-        else:
-            reasons.append(f"ADX={adx:.1f}，趋势较弱/震荡市")
-
-    # ---- 限制范围 ----
     score = max(-100, min(100, score))
-
-    # ---- 信号分类 ----
-    if score >= 50:
-        signal = Signal.STRONG_BUY
-    elif score >= 20:
-        signal = Signal.BUY
-    elif score <= -50:
-        signal = Signal.STRONG_SELL
-    elif score <= -20:
-        signal = Signal.SELL
-    else:
-        signal = Signal.NEUTRAL
-
-    # ---- 置信度 ----
+    signal = _classify_signal(score)
     confidence = min(1.0, abs(score) / 80)
 
-    # ---- 止损止盈 ----
-    atr = latest.get("atr14", price * 0.02)  # 默认 2%
-    if score > 0:
-        stop_loss = round(price - 2 * atr, 2)
-        take_profit = round(price + 3 * atr, 2)
-    else:
-        stop_loss = round(price + 2 * atr, 2)
-        take_profit = round(price - 3 * atr, 2)
+    atr = latest.get("atr14", price * 0.02)
+    stop_loss, take_profit = _calc_stop_take_profit(price, atr, score > 0)
 
     result = TradeSignal(
         signal=signal,

@@ -71,8 +71,7 @@ venv.bak/
 Thumbs.db
 
 # Project specific
-data/cache/
-data/parquet/
+/data/
 *.parquet
 *.log
 
@@ -83,3 +82,6 @@ docker-compose.override.yml
 .env.local
 .env.production
 secrets.toml
+
+# Data files
+annual.txt

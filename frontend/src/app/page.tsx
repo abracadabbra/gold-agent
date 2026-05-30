@@ -309,7 +309,7 @@ export default function Home() {
         const n = newsRes.value;
         for (const item of n.news) {
           const entry = { title: item.title, date: item.published || item.published_date || '', link: item.link };
-          if (DOMESTIC_SOURCES.includes(item.source)) cnSamples.push(entry);
+          if (DOMESTIC_SOURCES.includes(item.source ?? '')) cnSamples.push(entry);
           else enSamples.push(entry);
         }
         cnNews = cnSamples.slice(0, 3).map(x => ({ title: x.title, link: x.link }));

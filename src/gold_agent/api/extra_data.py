@@ -4,7 +4,6 @@ import asyncio
 import logging
 from typing import Any
 
-import pandas as pd
 from fastapi import APIRouter
 
 logger = logging.getLogger(__name__)
@@ -30,13 +29,7 @@ from gold_agent.data.calendar import fetch_calendar, get_upcoming_events, get_ne
 router = APIRouter(prefix="/api/analysis", tags=["数据补充"])
 
 
-def _json_safe(df: pd.DataFrame) -> list[dict[str, Any]]:
-    """DataFrame → JSON-safe list"""
-    if df.empty:
-        return []
-    return df.where(df.notna(), None).astype(object).where(df.notna(), None).to_dict(  # noqa: E501
-        orient="records",
-    )
+from gold_agent.utils.json import json_safe as _json_safe
 
 
 # 各数据源的缓存 TTL 配置
