@@ -407,3 +407,36 @@ Replaced Recharts chart with lightweight-charts K-line with MA overlays/volume h
 ### Next Steps
 
 - None - task complete
+
+
+## Session 13: Extract dashboard components, refactor data/signal pipelines
+
+**Date**: 2026-05-30
+**Task**: Extract dashboard components, refactor data/signal pipelines
+**Branch**: `master`
+
+### Summary
+
+extract card components to frontend/src/app/dashboard/components/, consolidate json_safe to gold_agent/utils/, modularize scoring in signals.py, extract helpers in aisc/cot/etf_flow/china_macro, fix news null safety
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `6662ca5` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
