@@ -3,7 +3,7 @@
 ## Quick start
 ```bash
 pip install -e ".[dev]"           # install + dev deps
-uvicorn gold_agent.main:app --reload --host 0.0.0.0 --port 8000  # dev server
+uvicorn gold_agent.main:app --reload --host 0.0.0.0 --port 8001  # dev server
 pytest                            # run tests (asyncio_mode=auto)
 ruff check src/ tests/            # lint (line-length=100)
 mypy src/                         # typecheck
@@ -33,9 +33,17 @@ docker-compose up -d              # full stack (app + postgres + redis)
 ## Important quirks
 - `main.py:122` — `if __name__ == "__main__"` block: use `uvicorn` CLI, not `python src/gold_agent/main.py`
 - `/stats` endpoint has placeholder text (not wired to real metrics) — keep as-is unless explicitly changing
-- `tests/unit/` only covers indicators + signals; no integration tests
+- `tests/unit/` covers all 31 source files (100%), 333 tests total
 - Docker compose has PostgreSQL + Redis healthchecks; app waits on both
 - No CI workflows configured
+
+## Frontend (Next.js 16 + React 19)
+- Source: `frontend/src/app/dashboard/`
+- Tests: `frontend/src/__tests__/`, Jest 30 + `@testing-library/react`
+- Run: `cd frontend && npm test` (39 tests)
+- Config: `frontend/jest.config.js` (uses `next/jest` transformer)
+- Path alias `@/` maps to `src/` — keep `moduleNameMapper` in sync with `tsconfig.json`
+- Test naming: `*.test.ts` or `*.test.tsx` in `src/__tests__/`
 
 <!-- TRELLIS:START -->
 # Trellis Instructions

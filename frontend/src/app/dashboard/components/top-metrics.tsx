@@ -11,7 +11,7 @@ export function TopMetricsBar({ refreshKey }: { refreshKey: number }) {
   useEffect(() => { fetchGold(); }, [fetchGold, refreshKey]);
   useEffect(() => { fetchSignal(); }, [fetchSignal, refreshKey]);
 
-  const sig = signalData?.signal;
+  const sig = signalData?.unavailable ? null : signalData?.signal;
   const tone = sig ? signalTone(sig.signal) : undefined;
 
   return (

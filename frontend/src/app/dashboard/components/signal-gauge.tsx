@@ -22,6 +22,9 @@ export function SignalGaugeCard({ refreshKey }: { refreshKey: number }) {
   if (loading && !data) return <SectionCard title="交易信号" delay={130}><LoadingSkeleton /></SectionCard>;
   if (error && !data) return <ErrorCard title="交易信号" error={error || '无数据'} delay={130} onRetry={execute} />;
   if (!data) return <SectionCard title="交易信号" delay={130}><LoadingSkeleton /></SectionCard>;
+  if (data.unavailable) {
+    return <SectionCard title="交易信号" delay={130}><p className="muted-copy">{data.summary || '数据源暂时不可用'}</p></SectionCard>;
+  }
 
   const sig = data.signal;
   const tone = signalTone(sig.signal);

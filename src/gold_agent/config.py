@@ -27,6 +27,17 @@ class Settings(BaseSettings):
     database_url: str = "sqlite:///./data/gold_agent.db"
     redis_url: str = "redis://localhost:6379/0"
 
+    # ── 服务 ──
+    port: int = 8001
+
+    # ── 辩论 ──
+    debate_max_tokens: int = 2000
+
+    # ── 推送间隔 (秒) ──
+    push_interval_price: int = 60
+    push_interval_signal: int = 60
+    push_interval_news: int = 300
+
     # ── 缓存路径 ──
     data_cache_dir: Path = Path("./data/cache")
     parquet_dir: Path = Path("./data/parquet")

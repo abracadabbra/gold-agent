@@ -63,6 +63,15 @@ export default function PredictionChartCard({ refreshKey }: { refreshKey: number
           <pre className="mt-2 text-xs whitespace-pre-wrap text-[var(--muted)] leading-6">{data.summary}</pre>
         </details>
       )}
+      {data.disclaimer && (
+        <details className="mt-3 border border-[var(--danger)]/30 rounded-xl overflow-hidden">
+          <summary className="flex items-center gap-2 px-3 py-2 text-xs cursor-pointer text-[var(--danger)] hover:bg-[var(--danger)]/5 transition-colors">
+            <span className="inline-flex items-center justify-center w-4 h-4 rounded-full bg-[var(--danger)] text-white text-[10px] font-bold leading-none">!</span>
+            风险提示
+          </summary>
+          <p className="px-3 py-2 text-xs leading-5 text-[var(--muted)]">{data.disclaimer}</p>
+        </details>
+      )}
     </SectionCard>
   );
 }

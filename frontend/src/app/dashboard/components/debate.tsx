@@ -23,7 +23,7 @@ export function DebateCard() {
       esRef.current.close();
     }
 
-    const es = new EventSource(`${process.env.NEXT_PUBLIC_API_BASE || 'http://localhost:8000'}/api/debate/run/stream`);
+    const es = new EventSource(`${process.env.NEXT_PUBLIC_API_BASE || 'http://localhost:8001'}/api/debate/run/stream`);
     esRef.current = es;
 
     es.addEventListener('stage', (e: MessageEvent) => {

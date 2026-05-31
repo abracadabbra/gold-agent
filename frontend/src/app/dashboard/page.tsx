@@ -13,6 +13,7 @@ import { DebateCard } from './components/debate';
 import { BacktestCard } from './components/backtest';
 import { CentralBankCard, CotCard, EtfFlowCard, GeopolCard, FedWatchCard, ChinaMacroCard, AiscCard } from './components/extra-data';
 import { CalendarCard } from './components/calendar';
+import { KeyFactorsCard } from './components/key-factors';
 import { TopMetricsBar } from './components/top-metrics';
 
 const PredictionChartCard = dynamic(() => import('./prediction-chart'), {
@@ -166,7 +167,7 @@ export default function DashboardPage() {
         {/* Customize panel */}
         {showCustomize && (
           <div className="flex flex-wrap gap-2 mb-4 p-3 rounded-xl border border-[var(--border)] bg-[var(--surface-strong)]">
-            {['系统状态', '行情图', '交易信号', '价格预测', '宏观数据', '新闻情绪', '央行黄金储备', 'COT 持仓', 'ETF 流量', '地缘政治风险', 'FedWatch', '中国宏观', 'AISC', '财经日历', '辩论引擎', '回测'].map(label => {
+            {['系统状态', '行情图', '交易信号', '价格预测', '关键因子', '宏观数据', '新闻情绪', '央行黄金储备', 'COT 持仓', 'ETF 流量', '地缘政治风险', 'FedWatch', '中国宏观', 'AISC', '财经日历', '辩论引擎', '回测'].map(label => {
               const key = label;
               return (
                 <button
@@ -199,6 +200,11 @@ export default function DashboardPage() {
                 <div className="md:col-span-2 xl:col-span-3 flex gap-4 items-stretch">
                   <div className="flex-1 min-w-0 flex flex-col">{isVis('交易信号') && <SignalGaugeCard refreshKey={fastRefreshKey} />}</div>
                   <div className="flex-1 min-w-0 flex flex-col">{isVis('新闻情绪') && <NewsCard refreshKey={newsRefreshKey} />}</div>
+                </div>
+              )}
+              {isVis('关键因子') && (
+                <div className="md:col-span-2 xl:col-span-3">
+                  <KeyFactorsCard refreshKey={refreshKey} />
                 </div>
               )}
               {isVis('价格预测') && (

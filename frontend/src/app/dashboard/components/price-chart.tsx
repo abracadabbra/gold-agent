@@ -338,6 +338,11 @@ export function PriceChartCard({ refreshKey }: { refreshKey: number }) {
           </span>
           <span className="text-xs muted-copy">高: {stats.high.toFixed(2)} / 低: {stats.low.toFixed(2)}</span>
           <span className="text-xs muted-copy">{data.records} 条记录</span>
+          {data.source !== source && (
+            <span className="text-xs px-1.5 py-0.5 rounded bg-[var(--accent)]/10 text-[var(--accent)]">
+              实际数据源: {data.source === 'shfe' ? '沪金' : data.source}
+            </span>
+          )}
         </div>
       )}
 

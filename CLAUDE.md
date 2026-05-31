@@ -7,7 +7,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ### Backend (Python)
 ```bash
 pip install -e ".[dev]"           # install with dev deps
-uvicorn gold_agent.main:app --reload --host 0.0.0.0 --port 8000  # dev server
+uvicorn gold_agent.main:app --reload --host 0.0.0.0 --port 8001  # dev server
 pytest                            # run all tests (asyncio_mode=auto)
 pytest tests/unit/test_indicators.py  # single test file
 ruff check src/ tests/            # lint (line-length=100, target py312)
@@ -83,7 +83,7 @@ External APIs → DataCache (Redis 5min → Parquet monthly → live fetch)
 - **Imports**: full path (`gold_agent.quant.indicators import ...`), no re-exports in `__init__.py`
 - **Data collectors**: all follow `def fetch_xxx(**kwargs) -> pd.DataFrame`, returning empty DataFrame on failure
 - **Debate agent models**: each role has a separate model configurable in `.env` (bull, bear, auditor, arbitrator)
-- **Frontend API base**: `NEXT_PUBLIC_API_BASE` env var (defaults to `http://localhost:8000`)
+- **Frontend API base**: `NEXT_PUBLIC_API_BASE` env var (defaults to `http://localhost:8001`)
 
 ## Quirks
 

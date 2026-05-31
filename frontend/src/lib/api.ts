@@ -13,11 +13,12 @@ import type {
   QuickAnalysisResponse,
   ExtraDataResponse,
   CalendarResponse,
+  FactorsResponse,
 } from './types';
 
 import { useEffect, useRef } from 'react';
 
-const API_BASE = process.env.NEXT_PUBLIC_API_BASE || 'http://localhost:8000';
+const API_BASE = process.env.NEXT_PUBLIC_API_BASE || 'http://localhost:8001';
 
 const WS_BASE = API_BASE.replace(/^http/, 'ws');
 
@@ -110,6 +111,8 @@ export const api = {
 
   calendar: (days = 60) =>
     fetchJson<CalendarResponse>(`/api/analysis/calendar?days=${days}`),
+
+  factors: () => fetchJson<FactorsResponse>('/api/analysis/factors'),
 };
 
 export function useWebSocket(

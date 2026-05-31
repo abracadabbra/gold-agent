@@ -18,6 +18,7 @@ export interface IndicatorsResponse {
   price: number;
   indicators: Record<string, number>;
   summary: string;
+  unavailable?: boolean;
 }
 
 export interface SignalData {
@@ -32,6 +33,7 @@ export interface SignalData {
 export interface SignalResponse {
   signal: SignalData;
   summary: string;
+  unavailable?: boolean;
 }
 
 export interface PredictionPoint {
@@ -51,6 +53,8 @@ export interface PredictionResponse {
   history: HistoryPoint[];
   trend: string;
   summary: string;
+  disclaimer?: string;
+  unavailable?: boolean;
 }
 
 export interface MacroDataset {
@@ -174,6 +178,33 @@ export interface NextCalendarEvent {
   type_label: string;
   importance: string;
   color: string;
+}
+
+/* ─── Key Factors (关键因子) ─── */
+
+export interface FactorItem {
+  managed_money_long?: number;
+  managed_money_short?: number;
+  long_short_ratio?: number;
+  meeting_date?: string;
+  rate?: string;
+  hike_probability?: number;
+  cut_probability?: number;
+  no_change_probability?: number;
+  total_reserves_tonnes?: number;
+  countries_count?: number;
+  top_countries?: { country: string; gold_reserves_tonnes: number }[];
+  tips_yield?: number;
+  dxy?: number;
+  label?: string;
+}
+
+export interface FactorsResponse {
+  cot: FactorItem | null;
+  fedwatch: FactorItem | null;
+  central_bank: FactorItem | null;
+  tips: FactorItem | null;
+  dxy: FactorItem | null;
 }
 
 export interface CalendarResponse {
