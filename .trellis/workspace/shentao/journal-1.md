@@ -440,3 +440,43 @@ extract card components to frontend/src/app/dashboard/components/, consolidate j
 ### Next Steps
 
 - None - task complete
+
+---
+
+## 2026-05-31: Gold data fallback & port unification
+
+### Problem
+
+- yfinance rate limiting caused all intl/GLD gold data to return empty, crashing the dashboard with 500 errors
+- Frontend showed broken UI (NaN%, 0 scores) when backend returned unavailable data
+- Backend port was 8000 but frontend expected 8001
+
+### Changes
+
+**Backend (`src/gold_agent/api/analysis.py`)**
+- Added source fallback chain: intl→shfe, gld→shfe when live API is unavailable
+- Added DB persistence: fetched gold prices are saved to `gold_prices` table via `db_save_fn` callback
+- Added DB fallback: when both live and cache are empty, reads historical data from DB
+- Returns 200 with `unavailable: true` flag instead of 500 on empty data
+
+**Frontend**
+- `types.ts`: added `unavailable?: boolean` to IndicatorsResponse, SignalResponse, PredictionResponse
+- `signal-gauge.tsx`: shows "数据源暂时不可用" when unavailable
+- `top-metrics.tsx`: hides signal section when unavailable
+- `price-chart.tsx`: shows "实际数据源: 沪金" label when fallback is active
+- `page.tsx`: key factors card set to full width
+
+**Port unification (8000 → 8001)**
+- config.py, Dockerfile, docker-compose.yml, Makefile, .env.example
+- frontend api.ts, debate.tsx, test files
+- CLAUDE.md, AGENTS.md
+
+### Commit
+
+| SHA | Message |
+|-----|---------|
+| `1790293` | fix: gold data fallback, DB persistence, and port unification |
+
+### Status
+
+[OK] **Completed**
