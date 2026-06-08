@@ -69,7 +69,7 @@ def _standardize_columns(df: pd.DataFrame) -> pd.DataFrame:
         df = df.dropna(subset=["date"])
 
     # 标准化 ETF 列名
-    rename_map = {}
+    rename_map: dict[str, str] = {}
     for c in df.columns:
         if c in ("date",):
             continue

@@ -8,11 +8,13 @@ from fastapi.websockets import WebSocketState
 
 from gold_agent.api.websocket import (
     ConnectionManager,
+    manager,
     push_debate_result,
     push_news_update,
     push_price_update,
     push_signal_update,
     push_system_status,
+    websocket_endpoint,
 )
 from gold_agent.main import app
 
@@ -124,6 +126,52 @@ class TestConnectionManager:
         assert "clients" in stats
         assert "client1" in stats["clients"]
 
+    # --- send_personal_message 异常 ---
+
+    @pytest.mark.asyncio
+    async def test_send_personal_message_send_failure_disconnects(self, manager, mock_ws):
+        """send_personal_message 中 send_json 异常时断开连接"""
+        manager.active_connections["client1"] = mock_ws
+        mock_ws.send_json.side_effect = Exception("send failed")
+
+        await manager.send_personal_message("client1", {"type": "test"})
+
+        assert "client1" not in manager.active_connections
+
+    # --- broadcast 无订阅者 ---
+
+    @pytest.mark.asyncio
+    async def test_broadcast_no_subscribers_returns_early(self, manager):
+        """已知频道但无订阅者时广播直接返回"""
+        # "price" channel exists but has no subscribers
+        await manager.broadcast("price", {"type": "test"})
+
+    # --- broadcast 异常 ---
+
+    @pytest.mark.asyncio
+    async def test_broadcast_send_failure_disconnects(self, manager):
+        """broadcast 中 send_json 异常则断开客户端"""
+        bad_ws = MagicMock()
+        bad_ws.client_state = WebSocketState.CONNECTED
+        bad_ws.send_json = AsyncMock(side_effect=Exception("broadcast failed"))
+
+        manager.active_connections["client1"] = bad_ws
+        manager.subscriptions["price"].add("client1")
+
+        await manager.broadcast("price", {"type": "test"})
+
+        assert "client1" not in manager.active_connections
+
+    # --- subscribe 路径覆盖 ---
+
+    def test_subscribe_without_connect_initializes_client_subscriptions(self, manager):
+        """subscribe 时 client 不在 client_subscriptions 中则初始化"""
+        manager.active_connections["client1"] = MagicMock()
+        result = manager.subscribe("client1", "price")
+        assert result is True
+        assert "client1" in manager.client_subscriptions
+        assert "price" in manager.client_subscriptions["client1"]
+
 
 # ============================================================
 # WebSocket 端点集成测试
@@ -198,6 +246,34 @@ class TestWebSocketEndpoints:
             assert data["type"] == "stats"
             assert "data" in data
             assert data["data"]["total_connections"] >= 1
+
+    def test_handle_message_raises_exception(self):
+        """handle_client_message 异常时返回错误消息"""
+        exc = ValueError("processing error")
+        with patch(
+            "gold_agent.api.websocket.handle_client_message",
+            side_effect=exc,
+        ):
+            with client.websocket_connect("/ws/test-client") as ws:
+                ws.receive_json()  # welcome
+                ws.send_json({"type": "ping"})
+                data = ws.receive_json()
+                assert data["type"] == "error"
+                assert "processing error" in data["message"]
+
+    @pytest.mark.asyncio
+    async def test_websocket_endpoint_outer_exception(self):
+        """receive_text 抛出非 WebSocketDisconnect 异常时断开连接"""
+        ws = MagicMock()
+        ws.send_json = AsyncMock()
+        ws.accept = AsyncMock()
+        ws.client_state = WebSocketState.CONNECTED
+        ws.receive_text = AsyncMock(side_effect=RuntimeError("connection error"))
+
+        with patch.object(manager, "disconnect") as mock_disconnect:
+            await websocket_endpoint(ws, "test-client")
+
+        mock_disconnect.assert_called_with("test-client")
 
 
 # ============================================================

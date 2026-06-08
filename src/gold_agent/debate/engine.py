@@ -1,12 +1,14 @@
 """辩论流程编排 — 多 Agent 协作的核心引擎"""
 
 import json
+import re
 from dataclasses import dataclass
 from collections.abc import AsyncGenerator
 
 import logging
 logger = logging.getLogger(__name__)
 
+from gold_agent.config import settings
 from gold_agent.debate.agents import get_agents, AgentConfig
 from gold_agent.debate.llm import chat_completion
 
@@ -103,7 +105,14 @@ class DebateEngine:
 
 {data_context}
 
-请基于以上数据进行分析，不要编造数据。"""
+请基于以上数据进行分析，不要编造数据。
+
+如果上下文里出现 `source_status`、`stale`、`quality_score`、
+`row_count` 等质量字段，你必须先判断这些数据是否足够新鲜、是否足够可靠：
+- `stale=yes` 的数据不能当作实时事实
+- `source_status=db_fallback` 或 `source_status=cache` 的数据要结合 `as_of` 一起审慎引用
+- `quality_score` 低或 `row_count` 很小的数据，只能作为弱证据，不能支撑强结论
+- 当数据质量不足时，应明确说明不确定性，不要过度下结论"""
 
     async def _run_agent(
         self,
@@ -117,7 +126,7 @@ class DebateEngine:
             messages=messages,
             model=agent.model,
             temperature=agent.temperature,
-            max_tokens=2000,
+            max_tokens=settings.debate_max_tokens,
         )
 
         # 尝试解析 JSON
@@ -126,7 +135,6 @@ class DebateEngine:
             # 清理 markdown 代码块
             clean = content
             if "```" in clean:
-                import re
                 match = re.search(r"```(?:json)?\s*(.*?)```", clean, re.DOTALL)
                 if match:
                     clean = match.group(1)
@@ -144,125 +152,57 @@ class DebateEngine:
         )
 
     async def run_debate(self, data_context: str) -> DebateResult:
-        """
-        运行完整辩论流程
-
-        流程:
-        1. 数据采集 + 量化分析 (外部完成)
-        2. 看多方构建论点
-        3. 看空方构建论点
-        4. 数据审计员验证
-        5. 仲裁官综合裁决
-
-        Args:
-            data_context: 格式化的市场数据上下文
-
-        Returns:
-            DebateResult
-        """
-        result = DebateResult(rounds=[])
-        context = self._build_context(data_context)
-
-        # ---- Step 1: 看多方 ----
-        logger.info("=" * 40 + " Round 1: 看多方 " + "=" * 40)
-        bull_messages = [
-            {"role": "system", "content": self.agents["advocate"].system_prompt},
-            {"role": "user", "content": context},
-        ]
-        bull_round = await self._run_agent(self.agents["advocate"], bull_messages)
-        result.rounds.append(bull_round)
-        result.bull_argument = bull_round.parsed
-
-        # ---- Step 2: 看空方 ----
-        logger.info("=" * 40 + " Round 2: 看空方 " + "=" * 40)
-        bear_messages = [
-            {"role": "system", "content": self.agents["challenger"].system_prompt},
-            {"role": "user", "content": context},
-        ]
-        bear_round = await self._run_agent(self.agents["challenger"], bear_messages)
-        result.rounds.append(bear_round)
-        result.bear_argument = bear_round.parsed
-
-        # ---- Step 3: 数据审计 ----
-        logger.info("=" * 40 + " Round 3: 数据审计 " + "=" * 40)
-        audit_context = f"""{context}
-
-## 看多方论点
-{json.dumps(result.bull_argument, ensure_ascii=False, indent=2)}
-
-## 看空方论点
-{json.dumps(result.bear_argument, ensure_ascii=False, indent=2)}
-
-请验证以上双方引用的数据是否准确。"""
-        audit_messages = [
-            {"role": "system", "content": self.agents["auditor"].system_prompt},
-            {"role": "user", "content": audit_context},
-        ]
-        audit_round = await self._run_agent(self.agents["auditor"], audit_messages)
-        result.rounds.append(audit_round)
-        result.audit_result = audit_round.parsed
-
-        # ---- Step 4: 仲裁裁决 ----
-        logger.info("=" * 40 + " Round 4: 仲裁裁决 " + "=" * 40)
-        arb_context = f"""{context}
-
-## 看多方论点
-{json.dumps(result.bull_argument, ensure_ascii=False, indent=2)}
-
-## 看空方论点
-{json.dumps(result.bear_argument, ensure_ascii=False, indent=2)}
-
-## 数据审计结果
-{json.dumps(result.audit_result, ensure_ascii=False, indent=2)}
-
-请基于以上所有信息做出最终裁决。"""
-        arb_messages = [
-            {"role": "system", "content": self.agents["arbitrator"].system_prompt},
-            {"role": "user", "content": arb_context},
-        ]
-        arb_round = await self._run_agent(self.agents["arbitrator"], arb_messages)
-        result.rounds.append(arb_round)
-        result.final_verdict = arb_round.parsed
-
-        logger.info("辩论完成!")
-        return result
+        """运行完整辩论流程（消费 stream_debate 的完整结果）"""
+        async for stage, item in self._debate_rounds(data_context):
+            if stage == "complete":
+                assert isinstance(item, DebateResult)
+                return item
+        raise RuntimeError("debate did not complete")
 
     async def stream_debate(
         self, data_context: str
     ) -> AsyncGenerator[tuple[str, DebateRound | DebateResult], None]:
-        """
-        流式辩论 — 逐轮 yield (stage_name, round) 供 SSE 消费。
+        async for stage, item in self._debate_rounds(data_context):
+            yield stage, item
 
-        stage_name: bull / bear / audit / verdict
+    async def _debate_rounds(
+        self, data_context: str
+    ) -> AsyncGenerator[tuple[str, DebateRound | DebateResult], None]:
+        """
+        4 轮辩论核心逻辑 — 被 run_debate / stream_debate 共用。
+        stage_name: bull / bear / audit / verdict / complete
         """
         result = DebateResult(rounds=[])
         context = self._build_context(data_context)
 
         # ---- Step 1: 看多方 ----
         logger.info("=" * 40 + " Round 1: 看多方 " + "=" * 40)
-        bull_messages = [
-            {"role": "system", "content": self.agents["advocate"].system_prompt},
-            {"role": "user", "content": context},
-        ]
-        bull_round = await self._run_agent(self.agents["advocate"], bull_messages)
+        bull_round = await self._run_agent(
+            self.agents["advocate"],
+            [{"role": "system", "content": self.agents["advocate"].system_prompt},
+             {"role": "user", "content": context}],
+        )
         result.rounds.append(bull_round)
         result.bull_argument = bull_round.parsed
         yield ("bull", bull_round)
 
         # ---- Step 2: 看空方 ----
         logger.info("=" * 40 + " Round 2: 看空方 " + "=" * 40)
-        bear_messages = [
-            {"role": "system", "content": self.agents["challenger"].system_prompt},
-            {"role": "user", "content": context},
-        ]
-        bear_round = await self._run_agent(self.agents["challenger"], bear_messages)
+        bear_round = await self._run_agent(
+            self.agents["challenger"],
+            [{"role": "system", "content": self.agents["challenger"].system_prompt},
+             {"role": "user", "content": context}],
+        )
         result.rounds.append(bear_round)
         result.bear_argument = bear_round.parsed
         yield ("bear", bear_round)
 
         # ---- Step 3: 数据审计 ----
         logger.info("=" * 40 + " Round 3: 数据审计 " + "=" * 40)
-        audit_context = f"""{context}
+        audit_round = await self._run_agent(
+            self.agents["auditor"],
+            [{"role": "system", "content": self.agents["auditor"].system_prompt},
+             {"role": "user", "content": f"""{context}
 
 ## 看多方论点
 {json.dumps(result.bull_argument, ensure_ascii=False, indent=2)}
@@ -270,19 +210,18 @@ class DebateEngine:
 ## 看空方论点
 {json.dumps(result.bear_argument, ensure_ascii=False, indent=2)}
 
-请验证以上双方引用的数据是否准确。"""
-        audit_messages = [
-            {"role": "system", "content": self.agents["auditor"].system_prompt},
-            {"role": "user", "content": audit_context},
-        ]
-        audit_round = await self._run_agent(self.agents["auditor"], audit_messages)
+请验证以上双方引用的数据是否准确。"""}],
+        )
         result.rounds.append(audit_round)
         result.audit_result = audit_round.parsed
         yield ("audit", audit_round)
 
         # ---- Step 4: 仲裁裁决 ----
         logger.info("=" * 40 + " Round 4: 仲裁裁决 " + "=" * 40)
-        arb_context = f"""{context}
+        arb_round = await self._run_agent(
+            self.agents["arbitrator"],
+            [{"role": "system", "content": self.agents["arbitrator"].system_prompt},
+             {"role": "user", "content": f"""{context}
 
 ## 看多方论点
 {json.dumps(result.bull_argument, ensure_ascii=False, indent=2)}
@@ -293,16 +232,11 @@ class DebateEngine:
 ## 数据审计结果
 {json.dumps(result.audit_result, ensure_ascii=False, indent=2)}
 
-请基于以上所有信息做出最终裁决。"""
-        arb_messages = [
-            {"role": "system", "content": self.agents["arbitrator"].system_prompt},
-            {"role": "user", "content": arb_context},
-        ]
-        arb_round = await self._run_agent(self.agents["arbitrator"], arb_messages)
+请基于以上所有信息做出最终裁决。"""}],
+        )
         result.rounds.append(arb_round)
         result.final_verdict = arb_round.parsed
         yield ("verdict", arb_round)
 
         logger.info("辩论完成!")
-        # 在 generator 结束时携带完整结果
         yield ("complete", result)

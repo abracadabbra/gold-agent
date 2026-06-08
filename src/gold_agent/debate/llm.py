@@ -1,6 +1,7 @@
 """LLM 调用封装 — OpenAI 兼容端点"""
 
 import json
+import re
 
 from openai import AsyncOpenAI
 import logging
@@ -9,7 +10,7 @@ logger = logging.getLogger(__name__)
 from gold_agent.config import settings
 
 
-def get_llm_client(model: str = "gpt-4.1") -> AsyncOpenAI:
+def get_llm_client() -> AsyncOpenAI:
     """获取 OpenAI 兼容客户端"""
     return AsyncOpenAI(
         api_key=settings.openai_api_key,
@@ -37,7 +38,7 @@ async def chat_completion(
     Returns:
         LLM 输出文本
     """
-    client = get_llm_client(model)
+    client = get_llm_client()
 
     kwargs = {
         "model": model,
@@ -49,7 +50,7 @@ async def chat_completion(
         kwargs["response_format"] = response_format
 
     try:
-        response = await client.chat.completions.create(**kwargs)
+        response = await client.chat.completions.create(**kwargs)  # type: ignore[call-overload]
         content = response.choices[0].message.content
         tokens_used = response.usage.total_tokens if response.usage else 0
         logger.info(f"LLM 调用完成: model={model}, tokens={tokens_used}, 长度={len(content)}")
@@ -75,8 +76,6 @@ async def chat_completion_json(
     try:
         return json.loads(text)
     except json.JSONDecodeError:
-        # 尝试从 markdown 代码块提取 JSON
-        import re
         match = re.search(r"```(?:json)?\s*(.*?)```", text, re.DOTALL)
         if match:
             return json.loads(match.group(1))

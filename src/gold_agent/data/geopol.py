@@ -9,7 +9,7 @@ logger = logging.getLogger(__name__)
 GPR_URL = "https://www.matteoiacoviello.com/gpr_files/data_gpr_export.xls"
 
 
-def fetch_geopol(variant: str = "global") -> pd.DataFrame:
+def fetch_geopol(variant: str = "global") -> pd.DataFrame:  # noqa: ARG001 — reserved for future country-specific filtering
     """
     下载 GPR 指数数据
 
@@ -42,10 +42,6 @@ def fetch_geopol(variant: str = "global") -> pd.DataFrame:
             )
         elif "date" not in df.columns:
             df["date"] = pd.to_datetime(df[date_cols[0]])
-
-        if "date" not in df.columns:
-            logger.warning("[geopol] 无法构造日期列")
-            return pd.DataFrame()
 
         # 找到 GPR 指数列
         gpr_cols = {

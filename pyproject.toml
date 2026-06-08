@@ -63,8 +63,6 @@ dev = [
     "ruff>=0.8.0",
     "mypy>=1.13.0",
 ]
-
-# 外部数据源
 extras = [
     "cot-reports",
     "cme-fedwatch",
@@ -80,6 +78,34 @@ line-length = 100
 [tool.ruff.lint]
 select = ["E", "F", "I", "N", "W", "UP"]
 per-file-ignores = {"src/*" = ["E402", "I001"]}
+
+[tool.mypy]
+python_version = "3.12"
+strict = false
+check_untyped_defs = false
+ignore_missing_imports = true
+warn_unused_ignores = true
+files = ["src/gold_agent"]
+disallow_untyped_defs = false
+disallow_incomplete_defs = false
+
+[[tool.mypy.overrides]]
+module = [
+    "yfinance",
+    "fredapi",
+    "prophet",
+    "backtrader",
+    "cot_reports",
+    "cme_fedwatch",
+    "redis",
+    "openai",
+    "pandas_ta",
+]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "gold_agent.db.models"
+ignore_errors = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

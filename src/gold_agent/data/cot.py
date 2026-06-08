@@ -25,6 +25,13 @@ _STD_COLS = ["date", "exchange", "open_interest",
              "managed_money_long", "managed_money_short"]
 
 
+def cot_cache_key(year: int | None = None) -> str:
+    """COT 缓存 key，按年份隔离，避免历史查询串缓存。"""
+    if year is None:
+        year = datetime.date.today().year
+    return f"cot_{year}"
+
+
 def _filter_gold(df: pd.DataFrame) -> pd.DataFrame:
     """从 COT 数据中过滤黄金市场"""
     if "Market and Exchange Names" in df.columns:

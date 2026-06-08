@@ -2,7 +2,7 @@
 
 import asyncio
 import json
-from datetime import datetime
+from datetime import datetime, UTC
 
 from fastapi import WebSocket, WebSocketDisconnect
 from fastapi.websockets import WebSocketState
@@ -40,7 +40,7 @@ class ConnectionManager:
             "client_id": client_id,
             "message": "连接成功",
             "available_channels": list(self.subscriptions.keys()),
-            "timestamp": datetime.utcnow().isoformat()
+            "timestamp": datetime.now(UTC).isoformat()
         })
 
     def disconnect(self, client_id: str):
@@ -79,7 +79,7 @@ class ConnectionManager:
             return
 
         message["channel"] = channel
-        message["timestamp"] = datetime.utcnow().isoformat()
+        message["timestamp"] = datetime.now(UTC).isoformat()
 
         disconnected = []
         for client_id in subscribers:
@@ -199,7 +199,7 @@ async def handle_client_message(client_id: str, message: dict):
     elif msg_type == "ping":
         await manager.send_personal_message(client_id, {
             "type": "pong",
-            "timestamp": datetime.utcnow().isoformat()
+            "timestamp": datetime.now(UTC).isoformat()
         })
 
     elif msg_type == "stats":
@@ -259,18 +259,37 @@ async def push_system_status(status_data: dict):
 
 # 定时任务
 from gold_agent.data.cache import cache
-from gold_agent.data.gold_price import fetch_gold_price
+from gold_agent.data.gold_price import fetch_gold_price, gold_cache_key, period_to_months
 from gold_agent.data.news import fetch_news_with_sentiment
 from gold_agent.quant.signals import generate_signal, get_signal_summary
-from gold_agent.db.repository import save_gold_prices, save_trade_signal
+from gold_agent.db.repository import save_gold_prices, save_news_articles, save_trade_signal
 from gold_agent.db.session import SessionLocal
+
+
+def _db_save_news(records: list[dict]) -> None:
+    """将采集到的新闻写入 DB。"""
+    try:
+        with SessionLocal() as db:
+            save_news_articles(db, records)
+    except Exception as e:
+        logger.warning(f"DB 保存新闻失败: {e}")
+        raise
 
 
 async def periodic_price_push(interval_seconds: int = 60):
     """定时推送金价"""
     while True:
         try:
-            df = cache.get(key="gold_intl", fetch_fn=fetch_gold_price, source="intl", period="1mo")
+            period = "1mo"
+            df, meta = cache.get_with_meta(
+                key=gold_cache_key("intl", period),
+                fetch_fn=fetch_gold_price,
+                source="intl",
+                period=period,
+                max_stale_days=0.1,
+                months=period_to_months(period),
+                expected_frequency="daily",
+            )
             if not df.empty:
                 # 写入数据库
                 records = df.to_dict(orient="records")
@@ -286,6 +305,7 @@ async def periodic_price_push(interval_seconds: int = 60):
                     "low": float(latest["low"]),
                     "close": float(latest["close"]),
                     "volume": float(latest.get("volume", 0)),
+                    "meta": meta,
                 })
                 logger.debug(f"定时推送: 金价 ${latest['close']:.2f}")
         except Exception as e:
@@ -297,7 +317,16 @@ async def periodic_signal_push(interval_seconds: int = 60):
     """定时推送交易信号"""
     while True:
         try:
-            df = cache.get(key="gold_intl", fetch_fn=fetch_gold_price, source="intl", period="1y")
+            period = "1y"
+            df, meta = cache.get_with_meta(
+                key=gold_cache_key("intl", period),
+                fetch_fn=fetch_gold_price,
+                source="intl",
+                period=period,
+                max_stale_days=0.1,
+                months=period_to_months(period),
+                expected_frequency="daily",
+            )
             if not df.empty:
                 signal = generate_signal(df)
                 summary = get_signal_summary(signal)
@@ -315,6 +344,7 @@ async def periodic_signal_push(interval_seconds: int = 60):
                 await push_signal_update({
                     "signal": signal.to_dict(),
                     "summary": summary,
+                    "meta": meta,
                 })
                 logger.debug(f"定时推送: 信号 {signal.signal.value}")
         except Exception as e:
@@ -326,7 +356,14 @@ async def periodic_news_push(interval_seconds: int = 300):
     """定时推送新闻"""
     while True:
         try:
-            df = fetch_news_with_sentiment()
+            df, meta = cache.get_with_meta(
+                key="news_sentiment",
+                fetch_fn=fetch_news_with_sentiment,
+                ttl=300,
+                max_stale_days=1,
+                expected_frequency="intraday",
+                db_save_fn=_db_save_news,
+            )
             if not df.empty:
                 avg_score = float(df["sentiment_score"].mean())
                 label = (
@@ -339,6 +376,7 @@ async def periodic_news_push(interval_seconds: int = 300):
                     "avg_sentiment": avg_score,
                     "label": label,
                     "articles": df.head(5).to_dict(orient="records"),
+                    "meta": meta,
                 })
                 logger.debug(f"定时推送: 新闻 {len(df)} 条")
         except Exception as e:

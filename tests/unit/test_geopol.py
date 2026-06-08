@@ -65,3 +65,18 @@ class TestFetchGeopol:
             result = fetch_geopol()
 
             assert result.empty
+
+    def test_single_date_col_elif_branch(self):
+        """只有一个日期列时使用 elif 分支（覆盖 lines 43-44）"""
+        mock_df = pd.DataFrame({
+            "year": [2020, 2021],
+            "GPR": [100.0, 110.0],
+            "GPR_threat": [90.0, 95.0],
+            "GPR_act": [85.0, 88.0],
+        })
+        with patch("gold_agent.data.geopol.pd.read_excel") as mock_read:
+            mock_read.return_value = mock_df
+            result = fetch_geopol()
+            assert not result.empty
+            assert "date" in result.columns
+            assert "gpr_index" in result.columns

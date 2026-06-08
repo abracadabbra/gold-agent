@@ -30,8 +30,9 @@ def fetch_fedwatch() -> pd.DataFrame:
             meetings = [meetings]
 
         current_target = data.get("current_target", "")
-        cur_low = float(current_target.split("-")[0].rstrip("%")) if current_target and "-" in current_target else 0
-        cur_high = float(current_target.split("-")[1].rstrip("%")) if current_target and "-" in current_target else 0
+        has_range = current_target and "-" in current_target
+        cur_low = float(current_target.split("-")[0].rstrip("%")) if has_range else 0
+        cur_high = float(current_target.split("-")[1].rstrip("%")) if has_range else 0
         rows = []
         for item in meetings:
             meeting_date = item.get("date", "")
@@ -60,7 +61,8 @@ def fetch_fedwatch() -> pd.DataFrame:
         df = pd.DataFrame(rows)
         if "meeting_date" in df.columns:
             df["date"] = pd.to_datetime(df["meeting_date"], errors="coerce")
-        df = df.dropna(subset=["date"]).sort_values("date").reset_index(drop=True) if "date" in df.columns else df
+        if "date" in df.columns:
+            df = df.dropna(subset=["date"]).sort_values("date").reset_index(drop=True)
 
         logger.info(f"[fedwatch] 处理完成: {len(df)} 行")
         return df

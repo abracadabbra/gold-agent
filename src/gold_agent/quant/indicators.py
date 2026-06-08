@@ -55,8 +55,9 @@ class IndicatorResult:
 
     def to_dict(self) -> dict:
         """转为字典，用于 LLM 上下文注入"""
-        result = {}
+        result: dict[str, float] = {}
         for k, v in self.__dict__.items():
+
             if v is not None and isinstance(v, pd.Series) and not v.empty:
                 val = v.iloc[-1]
                 if pd.notna(val):
@@ -132,87 +133,92 @@ def _adx(high: pd.Series, low: pd.Series, close: pd.Series, length: int = 14) ->
 # 主计算函数
 # ============================================================
 
-def compute_indicators(df: pd.DataFrame) -> IndicatorResult:
-    """
-    计算全部技术指标
-
-    优先使用 pandas-ta，不可用时回退到纯 pandas 实现
-
-    Args:
-        df: 必须包含 open, high, low, close 列
-
-    Returns:
-        IndicatorResult 对象
-    """
-    required = ["open", "high", "low", "close"]
-    for col in required:
-        if col not in df.columns:
-            raise ValueError(f"缺少必要列: {col}")
-
+def _compute_with_pandas_ta(df: pd.DataFrame, result: IndicatorResult):
+    """使用 pandas-ta 计算全部技术指标"""
     close = df["close"]
     high = df["high"]
     low = df["low"]
 
+    result.ma5 = ta.sma(close, length=5)
+    result.ma10 = ta.sma(close, length=10)
+    result.ma20 = ta.sma(close, length=20)
+    result.ma60 = ta.sma(close, length=60)
+    result.ema12 = ta.ema(close, length=12)
+    result.ema26 = ta.ema(close, length=26)
+
+    macd_df = ta.macd(close, fast=12, slow=26, signal=9)
+    if macd_df is not None and not macd_df.empty:
+        result.macd_line = macd_df.iloc[:, 0]
+        result.macd_signal = macd_df.iloc[:, 1]
+        result.macd_hist = macd_df.iloc[:, 2]
+
+    result.rsi14 = ta.rsi(close, length=14)
+
+    stoch_df = ta.stoch(high, low, close)
+    if stoch_df is not None and not stoch_df.empty:
+        result.stoch_k = stoch_df.iloc[:, 0]
+        result.stoch_d = stoch_df.iloc[:, 1]
+
+    bb_df = ta.bbands(close, length=20, std=2)  # type: ignore[arg-type]
+    if bb_df is not None and not bb_df.empty:
+        result.bb_lower = bb_df.iloc[:, 0]
+        result.bb_mid = bb_df.iloc[:, 1]
+        result.bb_upper = bb_df.iloc[:, 2]
+
+    result.atr14 = ta.atr(high, low, close, length=14)
+
+    adx_df = ta.adx(high, low, close, length=14)
+    if adx_df is not None and not adx_df.empty:
+        result.adx = adx_df.iloc[:, 0]
+
+    st_df = ta.supertrend(high, low, close, length=10, multiplier=3)
+    if st_df is not None and not st_df.empty:
+        result.supertrend = st_df.iloc[:, 0]
+        result.supertrend_dir = st_df.iloc[:, 1]
+
+    if "volume" in df.columns:
+        result.obv = ta.obv(close, df["volume"])
+
+
+def _compute_with_fallback(df: pd.DataFrame, result: IndicatorResult):
+    """纯 pandas 实现回退"""
+    close = df["close"]
+    high = df["high"]
+    low = df["low"]
+
+    result.ma5 = _sma(close, 5)
+    result.ma10 = _sma(close, 10)
+    result.ma20 = _sma(close, 20)
+    result.ma60 = _sma(close, 60)
+    result.ema12 = _ema(close, 12)
+    result.ema26 = _ema(close, 26)
+    result.macd_line, result.macd_signal, result.macd_hist = _macd(close)
+    result.rsi14 = _rsi(close, 14)
+    result.stoch_k, result.stoch_d = _stochastic(high, low, close)
+    result.bb_upper, result.bb_mid, result.bb_lower = _bollinger_bands(close)
+    result.atr14 = _atr(high, low, close, 14)
+    result.adx = _adx(high, low, close, 14)
+
+
+def compute_indicators(df: pd.DataFrame) -> IndicatorResult:
+    """
+    计算全部技术指标
+    优先使用 pandas-ta，不可用时回退到纯 pandas 实现
+    """
+    for col in ["open", "high", "low", "close"]:
+        if col not in df.columns:
+            raise ValueError(f"缺少必要列: {col}")
+
     result = IndicatorResult()
 
     if HAS_PANDAS_TA:
-        # ---- 使用 pandas-ta ----
-        result.ma5 = ta.sma(close, length=5)
-        result.ma10 = ta.sma(close, length=10)
-        result.ma20 = ta.sma(close, length=20)
-        result.ma60 = ta.sma(close, length=60)
-        result.ema12 = ta.ema(close, length=12)
-        result.ema26 = ta.ema(close, length=26)
-
-        macd_df = ta.macd(close, fast=12, slow=26, signal=9)
-        if macd_df is not None and not macd_df.empty:
-            result.macd_line = macd_df.iloc[:, 0]
-            result.macd_signal = macd_df.iloc[:, 1]
-            result.macd_hist = macd_df.iloc[:, 2]
-
-        result.rsi14 = ta.rsi(close, length=14)
-
-        stoch_df = ta.stoch(high, low, close)
-        if stoch_df is not None and not stoch_df.empty:
-            result.stoch_k = stoch_df.iloc[:, 0]
-            result.stoch_d = stoch_df.iloc[:, 1]
-
-        bb_df = ta.bbands(close, length=20, std=2)
-        if bb_df is not None and not bb_df.empty:
-            result.bb_lower = bb_df.iloc[:, 0]
-            result.bb_mid = bb_df.iloc[:, 1]
-            result.bb_upper = bb_df.iloc[:, 2]
-
-        result.atr14 = ta.atr(high, low, close, length=14)
-
-        adx_df = ta.adx(high, low, close, length=14)
-        if adx_df is not None and not adx_df.empty:
-            result.adx = adx_df.iloc[:, 0]
-
-        st_df = ta.supertrend(high, low, close, length=10, multiplier=3)
-        if st_df is not None and not st_df.empty:
-            result.supertrend = st_df.iloc[:, 0]
-            result.supertrend_dir = st_df.iloc[:, 1]
-
-        if "volume" in df.columns:
-            result.obv = ta.obv(close, df["volume"])
+        _compute_with_pandas_ta(df, result)
     else:
-        # ---- 纯 pandas 实现 ----
-        result.ma5 = _sma(close, 5)
-        result.ma10 = _sma(close, 10)
-        result.ma20 = _sma(close, 20)
-        result.ma60 = _sma(close, 60)
-        result.ema12 = _ema(close, 12)
-        result.ema26 = _ema(close, 26)
-        result.macd_line, result.macd_signal, result.macd_hist = _macd(close)
-        result.rsi14 = _rsi(close, 14)
-        result.stoch_k, result.stoch_d = _stochastic(high, low, close)
-        result.bb_upper, result.bb_mid, result.bb_lower = _bollinger_bands(close)
-        result.atr14 = _atr(high, low, close, 14)
-        result.adx = _adx(high, low, close, 14)
+        _compute_with_fallback(df, result)
 
     indicator_count = len([v for v in result.__dict__.values() if v is not None])
-    logger.info(f"技术指标计算完成: {indicator_count} 个指标 (pandas-ta={'是' if HAS_PANDAS_TA else '否'})")  # noqa: E501
+    ta_label = "是" if HAS_PANDAS_TA else "否"
+    logger.info(f"技术指标计算完成: {indicator_count} 个指标 (pandas-ta={ta_label})")
     return result
 
 

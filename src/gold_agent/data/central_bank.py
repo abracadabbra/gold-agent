@@ -44,7 +44,7 @@ CENTRAL_BANK_RESERVES: list[dict] = [
 
 def fetch_central_bank_reserves(
     countries: list[str] | None = None,
-    start_year: int = 2020,
+    _start_year: int = 2020,
 ) -> pd.DataFrame:
     """获取央行黄金储备"""
     df = pd.DataFrame(CENTRAL_BANK_RESERVES)

@@ -4,7 +4,13 @@ from unittest.mock import MagicMock, patch
 
 import pandas as pd
 
-from gold_agent.data.etf_flow import fetch_etf_flow
+from gold_agent.data.etf_flow import (
+    _fetch_wgc_etf,
+    _fetch_yfinance_etf_fallback,
+    _find_date_column,
+    _standardize_columns,
+    fetch_etf_flow,
+)
 
 
 def _make_urlopen_mock(content: bytes = b"fake xlsx content"):
@@ -94,3 +100,76 @@ class TestFetchEtfFlow:
 
                     result = fetch_etf_flow()
                     assert result.empty
+
+    def test_find_date_column_not_found(self):
+        """无日期列时 _find_date_column 返回 None"""
+        df = pd.DataFrame({"a": [1], "b": [2]})
+        assert _find_date_column(df) is None
+
+    def test_standardize_columns_find_date_rename(self):
+        """日期列通过 _find_date_column 匹配并重命名"""
+        df = pd.DataFrame({
+            "Period": pd.date_range("2024-01-01", periods=2),
+            "Fund Name": ["SPDR Gold Shares", "iShares Gold Trust"],
+            "Region": ["North America", "North America"],
+            "Holdings Tonnes": [100.0, 200.0],
+        })
+        result = _standardize_columns(df)
+        assert "date" in result.columns
+        assert len(result) == 2
+
+    def test_standardize_columns_missing_fund_name(self):
+        """fund_name/region 列缺失时填入默认值 Global"""
+        df = pd.DataFrame({
+            "Date": pd.date_range("2024-01-01", periods=2),
+            "Holdings Tonnes": [100.0, 200.0],
+        })
+        result = _standardize_columns(df)
+        assert "date" in result.columns
+        assert "fund_name" in result.columns
+        assert (result["fund_name"] == "Global").all()
+        assert "region" in result.columns
+        assert (result["region"] == "Global").all()
+
+    def test_wgc_primary_url_fails_fallback_succeeds(self):
+        """WGC 主 URL 失败时使用备用 URL 成功"""
+        mock_df = _mock_wgc_xlsx()
+        mock_url = _make_urlopen_mock()
+        with patch("pandas.read_excel") as mock_read:
+            mock_read.return_value = mock_df
+            exc = Exception("Primary URL failed")
+            with patch("urllib.request.urlopen", side_effect=[exc, mock_url]):
+                result = fetch_etf_flow(months=12)
+                assert not result.empty
+                assert len(result) == 3
+
+    def test_wgc_empty_excel(self):
+        """WGC XLSX 为空时 _fetch_wgc_etf 返回空"""
+        mock_url = _make_urlopen_mock()
+        with patch("pandas.read_excel") as mock_read:
+            mock_read.return_value = pd.DataFrame()
+            with patch("urllib.request.urlopen", return_value=mock_url):
+                result = _fetch_wgc_etf(months=12)
+                assert result.empty
+
+    def test_wgc_no_date_column(self):
+        """WGC 数据中无日期列时 _fetch_wgc_etf 返回空"""
+        mock_url = _make_urlopen_mock()
+        df_no_date = pd.DataFrame({
+            "Fund Name": ["SPDR Gold Shares"],
+            "Region": ["North America"],
+            "Holdings Tonnes": [900.0],
+        })
+        with patch("pandas.read_excel") as mock_read:
+            mock_read.return_value = df_no_date
+            with patch("urllib.request.urlopen", return_value=mock_url):
+                result = _fetch_wgc_etf(months=12)
+                assert result.empty
+
+    def test_yfinance_ticker_empty_skipped(self):
+        """yfinance 部分 ETF 历史数据为空时跳过该 ticker"""
+        with patch("yfinance.Ticker") as mock_ticker_cls:
+            mock_ticker = mock_ticker_cls.return_value
+            mock_ticker.history.return_value = pd.DataFrame()
+            result = _fetch_yfinance_etf_fallback(months=6)
+            assert result.empty

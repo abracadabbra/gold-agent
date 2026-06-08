@@ -3,7 +3,7 @@
 import asyncio
 import time
 from contextlib import asynccontextmanager
-from datetime import datetime
+from datetime import datetime, UTC
 
 from fastapi import FastAPI, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
@@ -12,10 +12,13 @@ logger = logging.getLogger(__name__)
 
 from gold_agent.config import settings
 from gold_agent.db.session import init_db
+from gold_agent.db.repository import get_data_fetch_runs_overview
+from gold_agent.db.session import SessionLocal
 from gold_agent.api.analysis import router as analysis_router
 from gold_agent.api.debate import router as debate_router
 from gold_agent.api.backtest import router as backtest_router
 from gold_agent.api.extra_data import router as extra_data_router
+from gold_agent.api.factors import router as factors_router
 from gold_agent.api.websocket import (
     websocket_endpoint,
     manager as ws_manager,
@@ -23,10 +26,13 @@ from gold_agent.api.websocket import (
     periodic_signal_push,
     periodic_news_push,
 )
+from gold_agent.data.cot import cot_cache_key
+from gold_agent.data.gold_price import gold_cache_key
+from gold_agent.data.macro import macro_yfinance_cache_key
 
 
 @asynccontextmanager
-async def lifespan(app: FastAPI):
+async def lifespan(app: FastAPI):  # pragma: no cover
     """应用生命周期"""
     logger.info("GoldAgent 启动")
     logger.info(f"  LLM: {settings.openai_base_url}")
@@ -38,11 +44,12 @@ async def lifespan(app: FastAPI):
 
     app.state.start_time = time.time()
 
-    # 后台定时推送
     push_tasks = [
-        asyncio.create_task(periodic_price_push(60), name="price-push"),
-        asyncio.create_task(periodic_signal_push(60), name="signal-push"),
-        asyncio.create_task(periodic_news_push(300), name="news-push"),
+        asyncio.create_task(periodic_price_push(settings.push_interval_price), name="price-push"),
+        asyncio.create_task(
+            periodic_signal_push(settings.push_interval_signal), name="signal-push"
+        ),
+        asyncio.create_task(periodic_news_push(settings.push_interval_news), name="news-push"),
     ]
     logger.info(f"启动 {len(push_tasks)} 个定时推送任务")
 
@@ -75,6 +82,7 @@ app.include_router(analysis_router)
 app.include_router(debate_router)
 app.include_router(backtest_router)
 app.include_router(extra_data_router)
+app.include_router(factors_router)
 
 
 # WebSocket 端点
@@ -107,7 +115,7 @@ async def health():
     return {
         "status": "ok",
         "version": "0.1.0",
-        "timestamp": datetime.utcnow().isoformat(),
+        "timestamp": datetime.now(UTC).isoformat(),
         "services": {
             "api": "running",
             "websocket": "running",
@@ -140,6 +148,30 @@ def _format_duration(seconds: float) -> str:
     return f"{hours}h {minutes}m {secs}s"
 
 
+def _fetch_runs_stats(limit: int = 12) -> dict:
+    try:
+        with SessionLocal() as db:
+            overview = get_data_fetch_runs_overview(db, limit=limit)
+        return {
+            **overview,
+            "filters": {
+                "limit": limit,
+                "cache_key": None,
+            },
+        }
+    except Exception as e:
+        logger.warning(f"读取抓取运行统计失败: {e}")
+        return {
+            "recent": [],
+            "summary": [],
+            "filters": {
+                "limit": limit,
+                "cache_key": None,
+            },
+            "error": str(e),
+        }
+
+
 @app.get("/stats")
 async def stats():
     """系统统计端点"""
@@ -148,11 +180,20 @@ async def stats():
 
     cache_stats = {}
     extra_keys = [
-        "central_bank_reserves", "cot", "etf_flow", "geopol",
+        "central_bank_reserves", cot_cache_key(), "etf_flow", "geopol",
         "fedwatch", "aisc", "china_cpi", "china_ppi", "china_pmi",
         "china_m2", "china_gdp", "china_lpr", "china_usd_cny",
     ]
-    for key in ["gold_intl", "gold_shfe", "gold_gld", "macro_yfinance"] + extra_keys:
+    gold_keys = [
+        gold_cache_key(source, period)
+        for source in ["intl", "shfe", "gld"]
+        for period in ["1mo", "3mo", "6mo", "1y", "2y", "5y"]
+    ]
+    macro_keys = [
+        macro_yfinance_cache_key(period=period)
+        for period in ["1mo", "3mo", "6mo", "1y", "2y", "5y"]
+    ]
+    for key in gold_keys + macro_keys + extra_keys:
         cache_stats[key] = _count_parquet_files(key)
 
     return {
@@ -162,9 +203,10 @@ async def stats():
             "version": "0.1.0",
         },
         "cache": cache_stats,
+        "fetch_runs": _fetch_runs_stats(),
     }
 
 
-if __name__ == "__main__":
+if __name__ == "__main__":  # pragma: no cover
     import uvicorn
-    uvicorn.run("gold_agent.main:app", host="0.0.0.0", port=8000, reload=True)
+    uvicorn.run("gold_agent.main:app", host="0.0.0.0", port=settings.port, reload=True)

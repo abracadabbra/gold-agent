@@ -10,6 +10,7 @@ from gold_agent.quant.backtest.engine import (
     BacktestResult,
     GoldBacktester,
     _create_golden_cross_strategy,
+    _get_bt,
     get_backtest_summary,
 )
 
@@ -267,3 +268,133 @@ def test_create_golden_cross_strategy_returns_class():
         strategy_class = _create_golden_cross_strategy()
 
     assert callable(strategy_class)
+
+
+def test_get_bt_returns_backtrader():
+    """_get_bt 应返回 backtrader 模块"""
+    bt = _get_bt()
+    assert bt is not None
+    assert hasattr(bt, "Strategy")
+    assert hasattr(bt, "indicators")
+
+
+def test_get_bt_import_error():
+    """_get_bt 在 backtrader 不可用时抛出 ImportError"""
+    import builtins
+
+    real_import = builtins.__import__
+
+    def mock_import(name, *args, **kwargs):
+        if name == "backtrader":
+            raise ImportError("No module named 'backtrader'")
+        return real_import(name, *args, **kwargs)
+
+    with patch("builtins.__import__", side_effect=mock_import):
+        with pytest.raises(ImportError, match="backtrader"):
+            _get_bt()
+
+
+# ============================================================
+# GoldenCrossStrategy — __init__ & next
+# ============================================================
+
+
+class TestGoldenCrossStrategy:
+    """测试 GoldenCrossStrategy 的 __init__ 和 next 方法"""
+
+    def _make_mock_bt(self):
+        """创建 backtrader mock 环境"""
+        mock_bt = MagicMock()
+        mock_bt.Strategy = MagicMock
+        mock_bt.indicators = MagicMock()
+        mock_bt.indicators.SMA = MagicMock()
+        mock_bt.indicators.RSI = MagicMock()
+        mock_bt.indicators.ATR = MagicMock()
+        return mock_bt
+
+    def _make_mock_self(self):
+        """创建策略实例 mock"""
+        mock_self = MagicMock()
+        mock_self.p = MagicMock()
+        mock_self.p.fast_ma = 20
+        mock_self.p.slow_ma = 60
+        mock_self.p.rsi_threshold = 40
+        mock_self.p.atr_stop_mult = 2.0
+        return mock_self
+
+    def test_init_creates_indicators(self):
+        """__init__ 应创建 MA/RSI/ATR 指标 (行 38-41)"""
+        mock_bt = self._make_mock_bt()
+        with patch("gold_agent.quant.backtest.engine._get_bt", return_value=mock_bt):
+            strategy_class = _create_golden_cross_strategy()
+
+        mock_self = self._make_mock_self()
+        strategy_class.__init__(mock_self)
+
+        mock_bt.indicators.SMA.assert_any_call(period=20)
+        mock_bt.indicators.SMA.assert_any_call(period=60)
+        mock_bt.indicators.RSI.assert_called_once_with(period=14)
+        mock_bt.indicators.ATR.assert_called_once_with(period=14)
+
+    def test_next_buy_on_golden_cross(self):
+        """next 金叉时买入 (行 44-49)"""
+        mock_bt = self._make_mock_bt()
+        with patch("gold_agent.quant.backtest.engine._get_bt", return_value=mock_bt):
+            strategy_class = _create_golden_cross_strategy()
+
+        mock_self = self._make_mock_self()
+        strategy_class.__init__(mock_self)
+
+        # 配置指标值：金叉成立
+        mock_self.ma_fast = MagicMock()
+        mock_self.ma_slow = MagicMock()
+        mock_self.rsi = MagicMock()
+        mock_self.ma_fast.__getitem__.side_effect = lambda i: 110 if i == 0 else 100
+        mock_self.ma_slow.__getitem__.side_effect = lambda i: 100 if i == 0 else 105
+        mock_self.rsi.__getitem__.return_value = 50
+        mock_self.position = False
+
+        strategy_class.next(mock_self)
+
+        mock_self.buy.assert_called_once()
+
+    def test_next_close_on_death_cross(self):
+        """next 死叉时平仓 (行 50-52)"""
+        mock_bt = self._make_mock_bt()
+        with patch("gold_agent.quant.backtest.engine._get_bt", return_value=mock_bt):
+            strategy_class = _create_golden_cross_strategy()
+
+        mock_self = self._make_mock_self()
+        strategy_class.__init__(mock_self)
+
+        mock_self.ma_fast = MagicMock()
+        mock_self.ma_slow = MagicMock()
+        mock_self.ma_fast.__getitem__.side_effect = lambda i: 90 if i == 0 else 100
+        mock_self.ma_slow.__getitem__.side_effect = lambda i: 100 if i == 0 else 90
+        mock_self.position = True
+
+        strategy_class.next(mock_self)
+
+        mock_self.close.assert_called_once()
+
+    def test_next_no_action_when_no_position_and_no_cross(self):
+        """next 无头寸且无交叉时无操作"""
+        mock_bt = self._make_mock_bt()
+        with patch("gold_agent.quant.backtest.engine._get_bt", return_value=mock_bt):
+            strategy_class = _create_golden_cross_strategy()
+
+        mock_self = self._make_mock_self()
+        strategy_class.__init__(mock_self)
+
+        mock_self.ma_fast = MagicMock()
+        mock_self.ma_slow = MagicMock()
+        mock_self.rsi = MagicMock()
+        mock_self.ma_fast.__getitem__.side_effect = lambda i: 90 if i == 0 else 100
+        mock_self.ma_slow.__getitem__.side_effect = lambda i: 100 if i == 0 else 90
+        mock_self.rsi.__getitem__.return_value = 50
+        mock_self.position = False
+
+        strategy_class.next(mock_self)
+
+        mock_self.buy.assert_not_called()
+        mock_self.close.assert_not_called()

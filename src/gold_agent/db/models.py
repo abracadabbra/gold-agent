@@ -1,11 +1,25 @@
 """SQLAlchemy 模型 — 黄金分析系统数据库设计"""
 
-from datetime import datetime
+from datetime import datetime, UTC
 
-from sqlalchemy import Column, Integer, String, Float, DateTime, JSON, Text, Index
-from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy import (
+    JSON,
+    Column,
+    DateTime,
+    Float,
+    Index,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+)
+from sqlalchemy.orm import declarative_base
 
 Base = declarative_base()
+
+
+def _utcnow() -> datetime:
+    return datetime.now(UTC)
 
 
 class GoldPrice(Base):
@@ -20,10 +34,11 @@ class GoldPrice(Base):
     low = Column(Float)
     close = Column(Float, nullable=False)
     volume = Column(Float)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=_utcnow)
 
     # 复合索引：按数据源和日期查询
     __table_args__ = (
+        UniqueConstraint("source", "date", name="uq_gold_prices_source_date"),
         Index('idx_source_date', 'source', 'date'),
     )
 
@@ -71,9 +86,10 @@ class TechnicalIndicator(Base):
     # 成交量
     obv = Column(Float)
 
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=_utcnow)
 
     __table_args__ = (
+        UniqueConstraint("source", "date", name="uq_technical_indicators_source_date"),
         Index('idx_indicator_source_date', 'source', 'date'),
     )
 
@@ -94,7 +110,11 @@ class TradeSignal(Base):
     reasons = Column(JSON)  # 信号依据列表
     stop_loss = Column(Float)
     take_profit = Column(Float)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=_utcnow)
+
+    __table_args__ = (
+        UniqueConstraint("source", "date", name="uq_trade_signals_source_date"),
+    )
 
     def __repr__(self):
         return f"<TradeSignal(date={self.date}, signal={self.signal_type}, score={self.score})>"
@@ -115,7 +135,7 @@ class Prediction(Base):
     trend_value = Column(Float)
     changepoints = Column(JSON)  # 变化点列表
     components = Column(JSON)  # 趋势、周期等组件
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=_utcnow)
 
     __table_args__ = (
         Index('idx_prediction_date', 'prediction_date', 'target_date'),
@@ -169,7 +189,7 @@ class DebateResult(Base):
     context_data = Column(JSON)  # 输入的上下文数据
     raw_responses = Column(JSON)  # 原始LLM响应
     tokens_used = Column(Integer)  # 总token使用量
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=_utcnow)
 
     def __repr__(self):
         return f"<DebateResult(date={self.date}, verdict={self.verdict})>"
@@ -193,7 +213,7 @@ class BacktestResult(Base):
     win_rate = Column(Float)
     equity_curve = Column(JSON)  # 资金曲线数据
     trade_log = Column(JSON)  # 交易记录
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=_utcnow)
 
     def __repr__(self):
         return f"<BacktestResult(strategy={self.strategy}, return={self.total_return})>"
@@ -208,10 +228,11 @@ class MacroData(Base):
     indicator = Column(String(50), nullable=False)  # usd_index, us_10y, vix, cpi, fed_rate
     value = Column(Float, nullable=False)
     source = Column(String(20), nullable=False)  # yfinance, fred
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=_utcnow)
 
     __table_args__ = (
-        Index('idx_macro_indicator_date', 'indicator', 'date'),
+        UniqueConstraint("source", "indicator", "date", name="uq_macro_data_source_indicator_date"),
+        Index('idx_macro_source_indicator_date', 'source', 'indicator', 'date'),
     )
 
     def __repr__(self):
@@ -231,7 +252,11 @@ class NewsArticle(Base):
     sentiment_label = Column(String(20))  # bullish, bearish, neutral
     bull_hits = Column(JSON)  # 看多关键词
     bear_hits = Column(JSON)  # 看空关键词
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=_utcnow)
+
+    __table_args__ = (
+        UniqueConstraint("source", "link", name="uq_news_articles_source_link"),
+    )
 
     def __repr__(self):
         return f"<NewsArticle(title={self.title[:50]}..., sentiment={self.sentiment_label})>"
@@ -245,10 +270,36 @@ class SystemConfig(Base):
     key = Column(String(100), unique=True, nullable=False)
     value = Column(JSON)
     description = Column(Text)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow)
 
     def __repr__(self):
         return f"<SystemConfig(key={self.key})>"
+
+
+class DataFetchRun(Base):
+    """数据采集运行记录表"""
+    __tablename__ = "data_fetch_runs"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    cache_key = Column(String(100), nullable=False, index=True)
+    fetcher = Column(String(100), nullable=False)
+    status = Column(String(20), nullable=False)  # success, empty, failure, persist_failure
+    record_count = Column(Integer, nullable=False, default=0)
+    duration_ms = Column(Float, nullable=False)
+    error_message = Column(Text)
+    started_at = Column(DateTime, nullable=False)
+    finished_at = Column(DateTime, nullable=False)
+    created_at = Column(DateTime, default=_utcnow)
+
+    __table_args__ = (
+        Index("idx_data_fetch_runs_key_started", "cache_key", "started_at"),
+    )
+
+    def __repr__(self):
+        return (
+            f"<DataFetchRun(cache_key={self.cache_key}, status={self.status}, "
+            f"records={self.record_count})>"
+        )
 
 
 # 数据库初始化辅助函数
@@ -261,7 +312,7 @@ def get_table_stats(session):
     """获取各表记录数统计"""
     tables = [
         GoldPrice, TechnicalIndicator, TradeSignal, Prediction,
-        DebateResult, BacktestResult, MacroData, NewsArticle
+        DebateResult, BacktestResult, MacroData, NewsArticle, DataFetchRun
     ]
 
     stats = {}

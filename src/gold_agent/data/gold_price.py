@@ -8,6 +8,40 @@ import pandas as pd
 logger = logging.getLogger(__name__)
 
 
+_PERIOD_TO_DAYS = {
+    "1mo": 30,
+    "3mo": 90,
+    "6mo": 180,
+    "1y": 365,
+    "2y": 730,
+    "5y": 1825,
+}
+
+_PERIOD_TO_MONTHS = {
+    "1mo": 1,
+    "3mo": 3,
+    "6mo": 6,
+    "1y": 12,
+    "2y": 24,
+    "5y": 60,
+}
+
+
+def period_to_days(period: str) -> int:
+    """将 API period 转为近似天数。"""
+    return _PERIOD_TO_DAYS.get(period, 365)
+
+
+def period_to_months(period: str) -> int:
+    """将 API period 转为 Parquet 读取月份数。"""
+    return _PERIOD_TO_MONTHS.get(period, 12)
+
+
+def gold_cache_key(source: str, period: str) -> str:
+    """金价缓存 key，按 source + period 隔离不同时间窗口。"""
+    return f"gold_{source}_{period}"
+
+
 def fetch_gold_xauusd(period: str = "1y") -> pd.DataFrame:
     """
     COMEX 黄金期货 (GC=F) — yfinance 日频
@@ -94,7 +128,7 @@ def fetch_gold_spot_akshare(days: int = 365) -> pd.DataFrame:
 
 def fetch_all_gold(period: str = "1y") -> dict[str, pd.DataFrame]:
     """一次性拉取全部金价数据"""
-    days = 365 if period == "1y" else 730
+    days = period_to_days(period)
     return {
         "gold_xauusd": fetch_gold_xauusd(period),
         "gold_etf": fetch_gold_etf(period),
@@ -108,5 +142,5 @@ def fetch_gold_price(source='intl', period='1y'):
     if source == 'gld':
         return fetch_gold_etf(period=period)
     elif source == 'shfe':
-        return fetch_gold_spot_akshare(365)
+        return fetch_gold_spot_akshare(period_to_days(period))
     return fetch_gold_xauusd(period=period)

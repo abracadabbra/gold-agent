@@ -50,7 +50,7 @@ EVENT_TYPE_LABELS = {
 }
 
 
-def fetch_calendar(start_date: str = None, end_date: str = None) -> pd.DataFrame:
+def fetch_calendar(start_date: str | None = None, end_date: str | None = None) -> pd.DataFrame:
     """获取财经日历"""
     df = pd.DataFrame(MOCK_EVENTS)
     df["date"] = pd.to_datetime(df["date"])

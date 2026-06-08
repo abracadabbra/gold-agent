@@ -166,6 +166,8 @@ class TestDebateEngine:
         context = engine._build_context("test data")
         assert "test data" in context
         assert "市场数据" in context
+        assert "quality_score" in context
+        assert "stale=yes" in context
 
     @pytest.mark.asyncio
     async def test_run_debate_full_flow(self):
@@ -279,3 +281,48 @@ class TestDebateEngine:
             round_data = await engine._run_agent(agent, messages)
             assert round_data.parsed["stance"] == "bearish"
             assert round_data.parsed["confidence"] == 55
+
+
+class TestDebateEngineIncomplete:
+    """测试辩论未完成情况"""
+
+    @pytest.mark.asyncio
+    async def test_run_debate_incomplete(self):
+        """辩论未完成时引发 RuntimeError（覆盖 line 153）"""
+        engine = DebateEngine()
+
+        # Create a generator that yields "bull" then stops without "complete"
+        async def incomplete_generator(_):
+            yield ("bull", DebateRound(
+                agent_name="advocate", role="看多方",
+                model="gpt-4.1", content="{}", parsed={},
+            ))
+
+        with patch.object(engine, "_debate_rounds", incomplete_generator):
+            with pytest.raises(RuntimeError, match="debate did not complete"):
+                await engine.run_debate(data_context="test")
+
+    @pytest.mark.asyncio
+    async def test_stream_debate(self):
+        """stream_debate 正确 yield 每一轮（覆盖 lines 158-159）"""
+        engine = DebateEngine()
+        fake_round = DebateRound(
+            agent_name="advocate", role="看多方",
+            model="gpt-4.1", content="{}", parsed={},
+        )
+        fake_result = DebateResult(rounds=[fake_round])
+
+        async def mock_rounds(_):
+            yield ("bull", fake_round)
+            yield ("complete", fake_result)
+
+        with patch.object(engine, "_debate_rounds", mock_rounds):
+            stages = []
+            items = []
+            async for stage, item in engine.stream_debate(data_context="test"):
+                stages.append(stage)
+                items.append(item)
+
+            assert stages == ["bull", "complete"]
+            assert items[0] is fake_round
+            assert items[1] is fake_result

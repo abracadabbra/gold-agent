@@ -23,6 +23,33 @@ _MACRO_TICKERS = {
 }
 
 
+def _normalize_macro_indicators(indicators: list[str] | None) -> list[str]:
+    """Normalize indicator selections to known, de-duplicated ids."""
+    if indicators is None:
+        return list(_MACRO_TICKERS.keys())
+
+    normalized: list[str] = []
+    for indicator in indicators:
+        if indicator in _MACRO_TICKERS and indicator not in normalized:
+            normalized.append(indicator)
+    return normalized
+
+
+def macro_yfinance_cache_key(
+    period: str = "1y",
+    indicators: list[str] | None = None,
+) -> str:
+    """yfinance 宏观缓存 key，按 period 和指标子集隔离。"""
+    base = f"macro_yfinance_{period}"
+    normalized = _normalize_macro_indicators(indicators)
+
+    if indicators is None or set(normalized) == set(_MACRO_TICKERS):
+        return base
+    if not normalized:
+        return f"{base}_none"
+    return f"{base}_{'-'.join(sorted(normalized))}"
+
+
 def fetch_macro_yfinance(
     indicators: list[str] | None = None, period: str = "1y"
 ) -> pd.DataFrame:
@@ -36,8 +63,7 @@ def fetch_macro_yfinance(
     Returns:
         DataFrame: date 为索引，每列一个指标的收盘价
     """
-    if indicators is None:
-        indicators = list(_MACRO_TICKERS.keys())
+    indicators = _normalize_macro_indicators(indicators)
 
     tickers = [_MACRO_TICKERS[ind][0] for ind in indicators if ind in _MACRO_TICKERS]
     names = {ind: _MACRO_TICKERS[ind][1] for ind in indicators if ind in _MACRO_TICKERS}
@@ -89,6 +115,15 @@ _FRED_SERIES = {
     "us_2y_yield": ("DGS2", "2年期美债收益率 (日频)"),
     "tips_yield": ("DFII10", "10年期 TIPS 收益率 (实际利率)"),
 }
+
+
+def macro_fred_cache_key(
+    start_date: str = "2020-01-01",
+    series_ids: list[str] | None = None,
+) -> str:
+    """FRED 缓存 key，按 start_date 和 series_ids 隔离不同窗口。"""
+    series_part = "all" if not series_ids else "-".join(sorted(series_ids))
+    return f"macro_fred_{start_date}_{series_part}"
 
 
 def fetch_macro_fred(

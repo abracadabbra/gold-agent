@@ -11,13 +11,18 @@ from gold_agent.data.gold_price import (
     fetch_gold_price,
     fetch_gold_spot_akshare,
     fetch_gold_xauusd,
+    gold_cache_key,
+    period_to_days,
+    period_to_months,
 )
 
 
 @pytest.fixture
 def sample_yfinance_df():
     """模拟 yfinance history() 返回的 DataFrame (含时区)"""
-    dates = pd.date_range("2024-01-01", periods=5, freq="D", tz="UTC")
+    import datetime
+    today = datetime.date.today()
+    dates = pd.date_range(today - datetime.timedelta(days=7), periods=5, freq="D", tz="UTC")
     return pd.DataFrame({
         "Date": dates,
         "Open": [2000.0, 2010.0, 2005.0, 2015.0, 2020.0],
@@ -30,15 +35,17 @@ def sample_yfinance_df():
 
 @pytest.fixture
 def sample_akshare_df():
-    """模拟 akshare spot_golden_benchmark_sge() 返回的 DataFrame"""
-    dates = pd.date_range("2024-01-01", periods=3, freq="D")
+    """模拟 akshare spot_hist_sge() 返回的 DataFrame"""
+    import datetime
+    today = datetime.date.today()
+    dates = pd.date_range(today - datetime.timedelta(days=5), periods=3, freq="D")
     return pd.DataFrame({
-        "日期": dates,
-        "开盘价": [480.0, 482.0, 481.0],
-        "最高价": [485.0, 486.0, 484.0],
-        "最低价": [475.0, 478.0, 477.0],
-        "收盘价": [482.0, 483.0, 480.0],
-        "成交量": [5000, 5200, 5100],
+        "date": dates,
+        "open": [480.0, 482.0, 481.0],
+        "high": [485.0, 486.0, 484.0],
+        "low": [475.0, 478.0, 477.0],
+        "close": [482.0, 483.0, 480.0],
+        "volume": [5000, 5200, 5100],
     })
 
 
@@ -105,8 +112,8 @@ class TestFetchGoldSpotAkshare:
     """测试 akshare 沪金现货获取"""
 
     def test_success(self, sample_akshare_df):
-        """正常拉取应重命名中文列名为英文"""
-        with patch("akshare.spot_golden_benchmark_sge") as mock_fn:
+        """正常拉取应返回标准化的 OHLCV 列"""
+        with patch("akshare.spot_hist_sge") as mock_fn:
             mock_fn.return_value = sample_akshare_df
 
             result = fetch_gold_spot_akshare(days=30)
@@ -117,7 +124,7 @@ class TestFetchGoldSpotAkshare:
 
     def test_error_empty(self):
         """akshare 异常时返回空 DataFrame"""
-        with patch("akshare.spot_golden_benchmark_sge") as mock_fn:
+        with patch("akshare.spot_hist_sge") as mock_fn:
             mock_fn.side_effect = Exception("akshare error")
 
             result = fetch_gold_spot_akshare()
@@ -133,7 +140,7 @@ class TestFetchAllGold:
         with patch("yfinance.Ticker") as mock_ticker:
             mock_ticker.return_value.history.return_value = sample_yfinance_df
 
-            with patch("akshare.spot_golden_benchmark_sge") as mock_ak:
+            with patch("akshare.spot_hist_sge") as mock_ak:
                 mock_ak.return_value = sample_akshare_df
 
                 result = fetch_all_gold(period="1y")
@@ -149,7 +156,7 @@ class TestFetchAllGold:
                 Exception("ETF error"),  # etf 失败
             ]
 
-            with patch("akshare.spot_golden_benchmark_sge") as mock_ak:
+            with patch("akshare.spot_hist_sge") as mock_ak:
                 mock_ak.side_effect = Exception("akshare error")
 
                 result = fetch_all_gold()
@@ -172,3 +179,53 @@ class TestFetchGoldPrice:
 
             mock_fn.assert_called_once_with(period="1y")
             assert not result.empty
+
+    def test_delegates_to_etf(self):
+        """source='gld' 时委托给 fetch_gold_etf（覆盖 line 109）"""
+        with patch("gold_agent.data.gold_price.fetch_gold_etf") as mock_fn:
+            mock_df = pd.DataFrame({"close": [190.0]})
+            mock_fn.return_value = mock_df
+
+            result = fetch_gold_price(source="gld", period="6mo")
+
+            mock_fn.assert_called_once_with(period="6mo")
+            assert not result.empty
+
+    def test_delegates_to_akshare(self):
+        """source='shfe' 时委托给 fetch_gold_spot_akshare（覆盖 line 111）"""
+        with patch("gold_agent.data.gold_price.fetch_gold_spot_akshare") as mock_fn:
+            mock_df = pd.DataFrame({"close": [480.0]})
+            mock_fn.return_value = mock_df
+
+            result = fetch_gold_price(source="shfe")
+
+            mock_fn.assert_called_once_with(365)
+            assert not result.empty
+
+    def test_delegates_to_akshare_with_period_days(self):
+        """source='shfe' 时按 period 转换为天数"""
+        with patch("gold_agent.data.gold_price.fetch_gold_spot_akshare") as mock_fn:
+            mock_fn.return_value = pd.DataFrame({"close": [480.0]})
+
+            result = fetch_gold_price(source="shfe", period="3mo")
+
+            mock_fn.assert_called_once_with(90)
+            assert not result.empty
+
+
+class TestGoldPeriodHelpers:
+    """金价缓存 key 和周期换算规则"""
+
+    def test_gold_cache_key_includes_source_and_period(self):
+        assert gold_cache_key("intl", "1mo") == "gold_intl_1mo"
+        assert gold_cache_key("intl", "1y") == "gold_intl_1y"
+
+    def test_period_to_days(self):
+        assert period_to_days("1mo") == 30
+        assert period_to_days("5y") == 1825
+        assert period_to_days("unknown") == 365
+
+    def test_period_to_months(self):
+        assert period_to_months("1mo") == 1
+        assert period_to_months("5y") == 60
+        assert period_to_months("unknown") == 12

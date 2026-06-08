@@ -34,7 +34,7 @@ class TestGetLlmClient:
         from gold_agent.config import settings
 
         with patch("gold_agent.debate.llm.AsyncOpenAI") as mock_client_cls:
-            get_llm_client(model="gpt-4.1")
+            get_llm_client()
 
             mock_client_cls.assert_called_once_with(
                 api_key=settings.openai_api_key,

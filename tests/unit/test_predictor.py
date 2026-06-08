@@ -6,7 +6,11 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from gold_agent.quant.predictor import get_prediction_summary, predict_gold_price
+from gold_agent.quant.predictor import (
+    evaluate_naive_forecast,
+    get_prediction_summary,
+    predict_gold_price,
+)
 
 
 @pytest.fixture
@@ -152,6 +156,58 @@ def test_predict_gold_price_different_days(sample_ohlcv, mock_prophet):
 
     result_14 = predict_gold_price(sample_ohlcv, days=14)
     assert len(result_14["forecast"]) == 14
+
+
+# ============================================================
+# evaluate_naive_forecast
+# ============================================================
+
+
+def test_evaluate_naive_forecast_returns_error_metrics():
+    """naive baseline 评估返回 MAE/RMSE/MAPE。"""
+    df = pd.DataFrame({
+        "date": pd.date_range("2024-01-01", periods=5, freq="D"),
+        "close": [100.0, 102.0, 101.0, 105.0, 110.0],
+    })
+
+    result = evaluate_naive_forecast(df, horizon=1, window=4)
+
+    assert result["baseline"] == "naive_last_value"
+    assert result["horizon_days"] == 1
+    assert result["window"] == 4
+    assert result["sample_size"] == 4
+    assert result["moving_average_window"] == 5
+    assert result["mae"] == 3.0
+    assert result["rmse"] == pytest.approx(3.3912)
+    assert result["mape"] == pytest.approx(2.8265)
+    assert [item["baseline"] for item in result["baselines"]] == [
+        "naive_last_value",
+        "moving_average",
+        "linear_trend",
+    ]
+    assert result["baselines"][0]["mae"] == result["mae"]
+    assert result["baselines"][0]["rmse"] == result["rmse"]
+    assert result["baselines"][0]["mape"] == result["mape"]
+
+
+def test_evaluate_naive_forecast_empty_data():
+    result = evaluate_naive_forecast(pd.DataFrame(), horizon=1, window=60)
+
+    assert result["sample_size"] == 0
+    assert result["mae"] is None
+    assert result["rmse"] is None
+    assert result["mape"] is None
+    assert result["moving_average_window"] == 5
+    assert result["baselines"] == []
+
+
+def test_evaluate_naive_forecast_validates_args(sample_ohlcv):
+    with pytest.raises(ValueError, match="horizon"):
+        evaluate_naive_forecast(sample_ohlcv, horizon=0)
+    with pytest.raises(ValueError, match="window"):
+        evaluate_naive_forecast(sample_ohlcv, window=0)
+    with pytest.raises(ValueError, match="moving_average_window"):
+        evaluate_naive_forecast(sample_ohlcv, moving_average_window=0)
 
 
 # ============================================================

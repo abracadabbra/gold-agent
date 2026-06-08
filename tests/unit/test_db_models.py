@@ -1,10 +1,11 @@
 """数据库模型单元测试"""
 
-from datetime import datetime
+from datetime import UTC, datetime
 from unittest.mock import MagicMock, patch
 
 from gold_agent.db.models import (
     BacktestResult,
+    DataFetchRun,
     DebateResult,
     GoldPrice,
     MacroData,
@@ -49,6 +50,13 @@ class TestGoldPrice:
         expected = "<GoldPrice(date=2024-01-01 00:00:00, source=xauusd, close=2005.0)>"
         assert repr(gp) == expected
 
+    def test_unique_constraint_exists(self):
+        constraints = list(GoldPrice.__table__.constraints)
+        assert any(
+            getattr(constraint, "name", "") == "uq_gold_prices_source_date"
+            for constraint in constraints
+        )
+
 
 class TestTechnicalIndicator:
     """TechnicalIndicator 模型测试"""
@@ -82,6 +90,13 @@ class TestTechnicalIndicator:
         )
         expected = "<TechnicalIndicator(date=2024-01-01 00:00:00, source=xauusd, rsi=55.5)>"
         assert repr(ti) == expected
+
+    def test_unique_constraint_exists(self):
+        constraints = list(TechnicalIndicator.__table__.constraints)
+        assert any(
+            getattr(constraint, "name", "") == "uq_technical_indicators_source_date"
+            for constraint in constraints
+        )
 
 
 class TestTradeSignal:
@@ -117,6 +132,13 @@ class TestTradeSignal:
         )
         expected = "<TradeSignal(date=2024-01-01 00:00:00, signal=buy, score=50.0)>"
         assert repr(ts) == expected
+
+    def test_unique_constraint_exists(self):
+        constraints = list(TradeSignal.__table__.constraints)
+        assert any(
+            getattr(constraint, "name", "") == "uq_trade_signals_source_date"
+            for constraint in constraints
+        )
 
 
 class TestPrediction:
@@ -239,6 +261,13 @@ class TestMacroData:
         expected = "<MacroData(date=2024-01-01 00:00:00, indicator=usd_index, value=104.5)>"
         assert repr(md) == expected
 
+    def test_unique_constraint_exists(self):
+        constraints = list(MacroData.__table__.constraints)
+        assert any(
+            getattr(constraint, "name", "") == "uq_macro_data_source_indicator_date"
+            for constraint in constraints
+        )
+
 
 class TestNewsArticle:
     """NewsArticle 模型测试"""
@@ -280,6 +309,13 @@ class TestNewsArticle:
         )
         assert repr(na) == "<NewsArticle(title=金价突破历史新高..., sentiment=bullish)>"
 
+    def test_unique_constraint_exists(self):
+        constraints = list(NewsArticle.__table__.constraints)
+        assert any(
+            getattr(constraint, "name", "") == "uq_news_articles_source_link"
+            for constraint in constraints
+        )
+
 
 class TestSystemConfig:
     """SystemConfig 模型测试"""
@@ -305,6 +341,42 @@ class TestSystemConfig:
         assert repr(sc) == expected
 
 
+class TestDataFetchRun:
+    """DataFetchRun 模型测试"""
+
+    def test_creation(self):
+        started_at = datetime(2024, 1, 1, 10, 0, tzinfo=UTC)
+        finished_at = datetime(2024, 1, 1, 10, 1, tzinfo=UTC)
+        run = DataFetchRun(
+            cache_key="gold_intl_1y",
+            fetcher="fetch_gold_price",
+            status="success",
+            record_count=365,
+            duration_ms=1234.5,
+            started_at=started_at,
+            finished_at=finished_at,
+        )
+        assert run.cache_key == "gold_intl_1y"
+        assert run.fetcher == "fetch_gold_price"
+        assert run.status == "success"
+        assert run.record_count == 365
+
+    def test_repr(self):
+        run = DataFetchRun(
+            cache_key="macro_yfinance_1y",
+            fetcher="fetch_macro_yfinance",
+            status="failure",
+            record_count=0,
+            duration_ms=50.0,
+            started_at=datetime(2024, 1, 1, tzinfo=UTC),
+            finished_at=datetime(2024, 1, 1, 0, 0, 1, tzinfo=UTC),
+        )
+        assert (
+            repr(run)
+            == "<DataFetchRun(cache_key=macro_yfinance_1y, status=failure, records=0)>"
+        )
+
+
 class TestHelperFunctions:
     """辅助函数测试"""
 
@@ -321,7 +393,7 @@ class TestHelperFunctions:
         mock_query = MagicMock()
         session.query.return_value = mock_query
         # 每张表依次返回不同的行数
-        mock_query.count.side_effect = [100, 200, 50, 10, 5, 20, 300, 150]
+        mock_query.count.side_effect = [100, 200, 50, 10, 5, 20, 300, 150, 12]
 
         stats = get_table_stats(session)
 
@@ -333,6 +405,7 @@ class TestHelperFunctions:
         assert stats["backtest_results"] == 20
         assert stats["macro_data"] == 300
         assert stats["news_articles"] == 150
+        assert stats["data_fetch_runs"] == 12
         # SystemConfig 不在 get_table_stats 的统计范围内
         assert "system_config" not in stats
 
@@ -345,3 +418,27 @@ class TestHelperFunctions:
             # 验证传入的参数就是 engine
             args, _ = mock_create.call_args
             assert args[0] is engine
+
+    def test_utcnow(self):
+        """_utcnow 返回当前 UTC 时间（覆盖 line 12）"""
+        from gold_agent.db.models import _utcnow
+        now = _utcnow()
+        assert now.tzinfo is not None
+        assert now.tzinfo == UTC
+        # Should be close to current time
+        diff = abs((datetime.now(UTC) - now).total_seconds())
+        assert diff < 10
+
+    def test_get_table_stats_error(self):
+        """get_table_stats 中查询异常时捕获错误（覆盖 lines 276-277）"""
+        session = MagicMock()
+        session.query.side_effect = Exception("DB connection error")
+
+        stats = get_table_stats(session)
+
+        # All tables should have error messages
+        for name in ["gold_prices", "technical_indicators", "trade_signals",
+                      "predictions", "debate_results", "backtest_results",
+                      "macro_data", "news_articles", "data_fetch_runs"]:
+            assert name in stats
+            assert "Error" in str(stats[name])

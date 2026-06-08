@@ -6,7 +6,13 @@ import numpy as np
 import pandas as pd
 
 from gold_agent.config import settings
-from gold_agent.data.macro import fetch_all_macro, fetch_macro_fred, fetch_macro_yfinance
+from gold_agent.data.macro import (
+    fetch_all_macro,
+    fetch_macro_fred,
+    fetch_macro_yfinance,
+    macro_fred_cache_key,
+    macro_yfinance_cache_key,
+)
 
 
 def _make_multiindex_df(ticker_symbols, n_periods=3):
@@ -67,6 +73,34 @@ class TestFetchMacroYfinance:
 
             result = fetch_macro_yfinance()
             assert result.empty
+
+    def test_single_ticker_non_multiindex(self):
+        """单 ticker 时 columns 不是 MultiIndex（覆盖 lines 61-62）"""
+        dates = pd.date_range("2024-01-01", periods=3, freq="D", tz="UTC", name="Date")
+        # Single ticker returns regular Index (not MultiIndex)
+        single_df = pd.DataFrame(
+            {"Close": [2000.0, 2010.0, 2005.0]},
+            index=dates,
+        )
+        single_df.columns.name = "Price"
+        with patch("gold_agent.data.macro.yf.download") as mock_dl:
+            mock_dl.return_value = single_df
+            result = fetch_macro_yfinance(indicators=["gold"])
+            assert not result.empty
+            assert "date" in result.columns
+
+    def test_datetime_column_rename(self):
+        """yfinance 返回 datetime 列名时重命名为 date（覆盖 line 71）"""
+        # Use "Datetime" as index name so reset_index creates a "Datetime" column
+        dates = pd.date_range("2024-01-01", periods=3, freq="D", tz="UTC", name="Datetime")
+        arrays = [["Close"] * 2, ["DX-Y.NYB", "^TNX"]]
+        columns = pd.MultiIndex.from_arrays(arrays, names=["Price", "Ticker"])
+        df = pd.DataFrame(index=dates, columns=columns, dtype=float)
+        with patch("gold_agent.data.macro.yf.download") as mock_dl:
+            mock_dl.return_value = df
+            result = fetch_macro_yfinance(indicators=["usd_index", "us_10y"])
+            assert not result.empty
+            assert "date" in result.columns
 
 
 class TestFetchMacroFred:
@@ -129,6 +163,27 @@ class TestFetchMacroFred:
                 # 即使 cpi 失败，fed_rate 也应该返回
                 assert not result.empty
 
+    def test_series_returns_empty(self):
+        """FRED 序列返回空时记录警告（覆盖 line 131）"""
+        with patch.object(settings, "fred_api_key", "mock_key"):
+            with patch("fredapi.Fred") as mock_fred_cls:
+                mock_fred = mock_fred_cls.return_value
+                mock_fred.get_series.return_value = pd.Series([], dtype=float)
+
+                result = fetch_macro_fred(series_ids=["fed_rate"])
+                # No data -> empty result
+                assert result.empty
+
+    def test_no_results_returns_empty(self):
+        """所有 FRED 序列都失败时返回空（覆盖 line 136）"""
+        with patch.object(settings, "fred_api_key", "mock_key"):
+            with patch("fredapi.Fred") as mock_fred_cls:
+                mock_fred = mock_fred_cls.return_value
+                mock_fred.get_series.side_effect = Exception("API error")
+
+                result = fetch_macro_fred(series_ids=["fed_rate", "cpi"])
+                assert result.empty
+
 
 class TestFetchAllMacro:
     """测试 fetch_all_macro 聚合函数"""
@@ -150,3 +205,37 @@ class TestFetchAllMacro:
                     assert "official" in result
                     assert not result["realtime"].empty
                     assert not result["official"].empty
+
+
+class TestMacroCacheKeys:
+    """测试宏观缓存 key helper"""
+
+    def test_macro_yfinance_cache_key_default_is_backward_compatible(self):
+        assert macro_yfinance_cache_key(period="1y") == "macro_yfinance_1y"
+
+    def test_macro_yfinance_cache_key_sorts_subset_indicators(self):
+        assert (
+            macro_yfinance_cache_key(period="1y", indicators=["us_10y", "usd_index"])
+            == "macro_yfinance_1y_us_10y-usd_index"
+        )
+
+    def test_macro_yfinance_cache_key_full_set_collapses_to_default(self):
+        assert (
+            macro_yfinance_cache_key(
+                period="1y",
+                indicators=["gold", "crude_oil", "sp500", "vix", "us_2y", "us_10y", "usd_index"],
+            )
+            == "macro_yfinance_1y"
+        )
+
+    def test_macro_yfinance_cache_key_empty_subset_isolated(self):
+        assert macro_yfinance_cache_key(period="1y", indicators=[]) == "macro_yfinance_1y_none"
+
+    def test_macro_fred_cache_key_includes_start_date(self):
+        assert macro_fred_cache_key(start_date="2024-01-01") == "macro_fred_2024-01-01_all"
+
+    def test_macro_fred_cache_key_sorts_series_ids(self):
+        assert (
+            macro_fred_cache_key(start_date="2024-01-01", series_ids=["tips_yield", "fed_rate"])
+            == "macro_fred_2024-01-01_fed_rate-tips_yield"
+        )
